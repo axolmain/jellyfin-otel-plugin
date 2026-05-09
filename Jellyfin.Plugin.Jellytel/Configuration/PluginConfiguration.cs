@@ -3,22 +3,6 @@ using MediaBrowser.Model.Plugins;
 namespace Jellyfin.Plugin.Jellytel.Configuration;
 
 /// <summary>
-/// The configuration options.
-/// </summary>
-public enum SomeOptions
-{
-    /// <summary>
-    /// Option one.
-    /// </summary>
-    OneOption,
-
-    /// <summary>
-    /// Second option.
-    /// </summary>
-    AnotherOption
-}
-
-/// <summary>
 /// Plugin configuration.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
@@ -28,30 +12,27 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public PluginConfiguration()
     {
-        // set default options here
-        Options = SomeOptions.AnotherOption;
-        TrueFalseSetting = true;
-        AnInteger = 2;
-        AString = "string";
+        OtlpEndpoint = string.Empty;
+        ServiceName = "jellyfin";
+        BackfillBootLogs = false;
     }
 
     /// <summary>
-    /// Gets or sets a value indicating whether some true or false setting is enabled..
+    /// Gets or sets the OTLP HTTP endpoint base URL (e.g. http://localhost:4318).
+    /// When null or empty, OpenTelemetry log export is disabled.
     /// </summary>
-    public bool TrueFalseSetting { get; set; }
+    public string OtlpEndpoint { get; set; }
 
     /// <summary>
-    /// Gets or sets an integer setting.
+    /// Gets or sets the service.name resource attribute reported to the collector.
     /// </summary>
-    public int AnInteger { get; set; }
+    public string ServiceName { get; set; }
 
     /// <summary>
-    /// Gets or sets a string setting.
+    /// Gets or sets a value indicating whether the plugin should read the
+    /// current log file on startup and replay events that occurred before
+    /// the plugin loaded. Useful for capturing boot diagnostics; lossy on
+    /// structured properties since events are reparsed from text.
     /// </summary>
-    public string AString { get; set; }
-
-    /// <summary>
-    /// Gets or sets an enum option.
-    /// </summary>
-    public SomeOptions Options { get; set; }
+    public bool BackfillBootLogs { get; set; }
 }

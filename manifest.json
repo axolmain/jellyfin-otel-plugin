@@ -1,0 +1,12 @@
+[
+  {
+    "guid": "f7a99fe2-4dd9-4a55-8d6d-4e02914c54f6",
+    "name": "Jellytel",
+    "description": "OpenTelemetry log exporter for Jellyfin",
+    "overview": "Forwards Jellyfin logs to an OTLP collector",
+    "owner": "axolmain",
+    "category": "General",
+    "imageUrl": "",
+    "versions": []
+  }
+]

@@ -5,32 +5,26 @@
     <title>Jellytel</title>
 </head>
 <body>
-    <div id="TemplateConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div id="JellytelConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
         <div data-role="content">
             <div class="content-primary">
-                <form id="TemplateConfigForm">
-                    <div class="selectContainer">
-                        <label class="selectLabel" for="Options">Several Options</label>
-                        <select is="emby-select" id="Options" name="Options" class="emby-select-withcolor emby-select">
-                            <option id="optOneOption" value="OneOption">One Option</option>
-                            <option id="optAnotherOption" value="AnotherOption">Another Option</option>
-                        </select>
+                <form id="JellytelConfigForm">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="OtlpEndpoint">OTLP Endpoint</label>
+                        <input id="OtlpEndpoint" name="OtlpEndpoint" type="url" is="emby-input" />
+                        <div class="fieldDescription">Base URL of the OTLP HTTP collector (e.g. http://localhost:4318). Leave blank to disable OpenTelemetry log export.</div>
                     </div>
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AnInteger">An Integer</label>
-                        <input id="AnInteger" name="AnInteger" type="number" is="emby-input" min="0" />
-                        <div class="fieldDescription">A Description</div>
+                        <label class="inputLabel inputLabelUnfocused" for="ServiceName">Service Name</label>
+                        <input id="ServiceName" name="ServiceName" type="text" is="emby-input" />
+                        <div class="fieldDescription">Value reported as the service.name resource attribute.</div>
                     </div>
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
-                            <input id="TrueFalseSetting" name="TrueFalseCheckBox" type="checkbox" is="emby-checkbox" />
-                            <span>A Checkbox</span>
+                            <input id="BackfillBootLogs" name="BackfillBootLogs" type="checkbox" is="emby-checkbox" />
+                            <span>Backfill boot logs</span>
                         </label>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AString">A String</label>
-                        <input id="AString" name="AString" type="text" is="emby-input" />
-                        <div class="fieldDescription">Another Description</div>
+                        <div class="fieldDescription">On startup, parse the current log file and replay events that occurred before the plugin loaded. Lossy: structured properties become strings and the timestamp/level are reparsed from text.</div>
                     </div>
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
@@ -41,31 +35,29 @@
             </div>
         </div>
         <script type="text/javascript">
-            var TemplateConfig = {
+            var JellytelConfig = {
                 pluginUniqueId: 'f7a99fe2-4dd9-4a55-8d6d-4e02914c54f6'
             };
 
-            document.querySelector('#TemplateConfigPage')
+            document.querySelector('#JellytelConfigPage')
                 .addEventListener('pageshow', function() {
                     Dashboard.showLoadingMsg();
-                    ApiClient.getPluginConfiguration(TemplateConfig.pluginUniqueId).then(function (config) {
-                        document.querySelector('#Options').value = config.Options;
-                        document.querySelector('#AnInteger').value = config.AnInteger;
-                        document.querySelector('#TrueFalseSetting').checked = config.TrueFalseSetting;
-                        document.querySelector('#AString').value = config.AString;
+                    ApiClient.getPluginConfiguration(JellytelConfig.pluginUniqueId).then(function (config) {
+                        document.querySelector('#OtlpEndpoint').value = config.OtlpEndpoint || '';
+                        document.querySelector('#ServiceName').value = config.ServiceName || '';
+                        document.querySelector('#BackfillBootLogs').checked = !!config.BackfillBootLogs;
                         Dashboard.hideLoadingMsg();
                     });
                 });
 
-            document.querySelector('#TemplateConfigForm')
+            document.querySelector('#JellytelConfigForm')
                 .addEventListener('submit', function(e) {
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(TemplateConfig.pluginUniqueId).then(function (config) {
-                    config.Options = document.querySelector('#Options').value;
-                    config.AnInteger = document.querySelector('#AnInteger').value;
-                    config.TrueFalseSetting = document.querySelector('#TrueFalseSetting').checked;
-                    config.AString = document.querySelector('#AString').value;
-                    ApiClient.updatePluginConfiguration(TemplateConfig.pluginUniqueId, config).then(function (result) {
+                ApiClient.getPluginConfiguration(JellytelConfig.pluginUniqueId).then(function (config) {
+                    config.OtlpEndpoint = document.querySelector('#OtlpEndpoint').value;
+                    config.ServiceName = document.querySelector('#ServiceName').value;
+                    config.BackfillBootLogs = document.querySelector('#BackfillBootLogs').checked;
+                    ApiClient.updatePluginConfiguration(JellytelConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
                 });

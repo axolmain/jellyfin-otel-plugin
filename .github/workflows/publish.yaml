@@ -1,18 +1,129 @@
 name: '🚀 Publish Plugin'
 
 on:
-  release:
-    types:
-      - released
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Plugin version (e.g. 1.0.0.0)'
+        required: true
+
+permissions:
+  contents: write
 
 jobs:
-  call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/publish.yaml@master
-    with:
-      version: ${{ github.event.release.tag_name }}
-      is-unstable: ${{ github.event.release.prerelease }}
-    secrets:
-      deploy-host: ${{ secrets.DEPLOY_HOST }}
-      deploy-user: ${{ secrets.DEPLOY_USER }}
-      deploy-key: ${{ secrets.DEPLOY_KEY }}
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      PLUGIN_NAME: Jellyfin.Plugin.Jellytel
+      PROJECT_PATH: Jellyfin.Plugin.Jellytel/Jellyfin.Plugin.Jellytel.csproj
+      MANIFEST_GUID: f7a99fe2-4dd9-4a55-8d6d-4e02914c54f6
+      TARGET_ABI: 10.11.0.0
+      DOWNLOAD_BASE: https://github.com/${{ github.repository }}/releases/download
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build & publish
+        run: |
+          dotnet publish "$PROJECT_PATH" \
+            -c Release \
+            -p:Version=${{ steps.ver.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.ver.outputs.version }} \
+            -p:FileVersion=${{ steps.ver.outputs.version }} \
+            -o publish
+
+      - name: Package zip
+        id: pkg
+        run: |
+          VERSION=${{ steps.ver.outputs.version }}
+          ZIP="jellytel_${VERSION}.zip"
+          mkdir staging
+          cp publish/${PLUGIN_NAME}.dll staging/
+          cp publish/Serilog.Sinks.OpenTelemetry.dll staging/
+          cp publish/Google.Protobuf.dll staging/ 2>/dev/null || true
+          cp publish/Grpc.*.dll staging/ 2>/dev/null || true
+          (cd staging && zip -r "../$ZIP" .)
+          CHECKSUM=$(md5sum "$ZIP" | cut -d' ' -f1)
+          echo "zip=$ZIP" >> $GITHUB_OUTPUT
+          echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          files: ${{ steps.pkg.outputs.zip }}
+          generate_release_notes: true
+
+      - name: Update manifest.json
+        run: |
+          VERSION=${{ steps.ver.outputs.version }}
+          ZIP=${{ steps.pkg.outputs.zip }}
+          CHECKSUM=${{ steps.pkg.outputs.checksum }}
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          SOURCE_URL="${DOWNLOAD_BASE}/${{ steps.ver.outputs.tag }}/${ZIP}"
+
+          python3 - <<EOF
+          import json, os, pathlib
+
+          path = pathlib.Path("manifest.json")
+          if path.exists():
+              data = json.loads(path.read_text())
+              if isinstance(data, list):
+                  manifest = data[0]
+              else:
+                  manifest = data
+          else:
+              manifest = {
+                  "guid": "${MANIFEST_GUID}",
+                  "name": "Jellytel",
+                  "description": "OpenTelemetry log exporter for Jellyfin",
+                  "overview": "Forwards Jellyfin logs to an OTLP collector",
+                  "owner": "axolmain",
+                  "category": "General",
+                  "imageUrl": "",
+                  "versions": []
+              }
+
+          manifest.setdefault("versions", [])
+          manifest["versions"] = [v for v in manifest["versions"] if v.get("version") != "${VERSION}"]
+          manifest["versions"].insert(0, {
+              "version": "${VERSION}",
+              "changelog": "See release notes at ${SOURCE_URL%/*}",
+              "targetAbi": "${TARGET_ABI}",
+              "sourceUrl": "${SOURCE_URL}",
+              "checksum": "${CHECKSUM}",
+              "timestamp": "${TIMESTAMP}"
+          })
+
+          path.write_text(json.dumps([manifest], indent=2) + "\n")
+          EOF
+
+      - name: Commit manifest.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "manifest.json unchanged"
+          else
+            git commit -m "chore: update manifest.json for ${{ steps.ver.outputs.tag }}"
+            git push origin HEAD:master
+          fi
