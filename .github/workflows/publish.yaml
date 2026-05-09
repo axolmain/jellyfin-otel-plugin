@@ -55,6 +55,9 @@ jobs:
           VERSION=${{ steps.ver.outputs.version }}
           ZIP="jellytel_${VERSION}.zip"
           mkdir staging
+          # Ship the plugin dll plus only the dependencies Jellyfin does NOT already provide.
+          # Specifically skip Serilog.dll and Microsoft.Extensions.*.Abstractions.dll, which
+          # are host-provided — bundling them causes assembly version conflicts.
           cp publish/${PLUGIN_NAME}.dll staging/
           cp publish/Serilog.Sinks.OpenTelemetry.dll staging/
           cp publish/Google.Protobuf.dll staging/ 2>/dev/null || true

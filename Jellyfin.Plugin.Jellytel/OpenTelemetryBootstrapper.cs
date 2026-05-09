@@ -56,26 +56,44 @@ public class OpenTelemetryBootstrapper : IHostedService
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _hostOriginalLogger = Log.Logger;
-
-        if (Plugin.Instance is { } plugin)
+        // A throw from an IHostedService.StartAsync brings down the entire Jellyfin host.
+        // Swallow everything: a broken telemetry plugin must never crash the media server.
+        try
         {
-            plugin.ConfigurationChanged += OnConfigurationChanged;
+            _hostOriginalLogger = Log.Logger;
+
+            if (Plugin.Instance is { } plugin)
+            {
+                plugin.ConfigurationChanged += OnConfigurationChanged;
+            }
+
+            ApplyConfiguration(Plugin.Instance?.Configuration);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Jellytel: startup failed; plugin disabled for this session.");
         }
 
-        ApplyConfiguration(Plugin.Instance?.Configuration);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        if (Plugin.Instance is { } plugin)
+        try
         {
-            plugin.ConfigurationChanged -= OnConfigurationChanged;
+            if (Plugin.Instance is { } plugin)
+            {
+                plugin.ConfigurationChanged -= OnConfigurationChanged;
+            }
+
+            RestoreHostLogger();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Jellytel: shutdown cleanup failed.");
         }
 
-        RestoreHostLogger();
         return Task.CompletedTask;
     }
 
