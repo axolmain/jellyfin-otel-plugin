@@ -1,16 +1,16 @@
 ---
-name: "Template"
-guid: "eb5d7894-8eef-4b36-aa6f-5d124e828ce1"
+name: "Jellytel"
+guid: "f7a99fe2-4dd9-4a55-8d6d-4e02914c54f6"
 version: "1.0.0.0"
 targetAbi: "10.9.0.0"
 framework: "net8.0"
-overview: "Short description about your plugin"
+overview: "OpenTelemetry exporter for Jellyfin"
 description: >
-  This is a longer description that can span more than one
-  line and include details about your plugin.
+  Exports Jellyfin metrics and traces to an OpenTelemetry-compatible
+  collector via OTLP, giving you observability into your media server.
 category: "General"
-owner: "jellyfin"
+owner: "axolmain"
 artifacts:
-- "Jellyfin.Plugin.Template.dll"
+- "Jellyfin.Plugin.Jellytel.dll"
 changelog: >
   changelog
