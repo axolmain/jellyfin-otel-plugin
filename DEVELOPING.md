@@ -48,6 +48,42 @@ Events:
 - `SessionStarted` / `SessionEnded` — for connection-level signals
 - `Sessions` collection — poll this for "currently active streams" gauges
 
+Pattern — subscribe in an `IHostedService`, unsubscribe on stop:
+
+```csharp
+public class StreamMetrics : IHostedService
+{
+    private readonly ISessionManager _sessions;
+
+    public StreamMetrics(ISessionManager sessions) => _sessions = sessions;
+
+    public Task StartAsync(CancellationToken ct)
+    {
+        _sessions.PlaybackStart += OnStart;
+        _sessions.PlaybackStopped += OnStop;
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken ct)
+    {
+        _sessions.PlaybackStart -= OnStart;
+        _sessions.PlaybackStopped -= OnStop;
+        return Task.CompletedTask;
+    }
+
+    private void OnStart(object? sender, PlaybackProgressEventArgs e)
+    {
+        var method = e.Session.PlayState.PlayMethod;       // DirectPlay / Transcode / …
+        var bitrate = e.Session.TranscodingInfo?.Bitrate;  // null if not transcoding
+        // record to your Meter / log here
+    }
+
+    private void OnStop(object? sender, PlaybackStopEventArgs e) { /* … */ }
+}
+```
+
+Register it in `PluginServiceRegistrator.RegisterServices` with `serviceCollection.AddHostedService<StreamMetrics>()`.
+
 What you can read off `SessionInfo`:
 - `PlayState.PlayMethod` — `DirectPlay` / `DirectStream` / `Transcode` (Phase 1)
 - `PlayState.IsPaused` — pause/resume signal
