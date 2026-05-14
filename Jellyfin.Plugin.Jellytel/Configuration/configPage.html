@@ -38,6 +38,21 @@
                         </label>
                         <div class="fieldDescription">On startup, parse the current log file and replay events that occurred before the plugin loaded. Lossy: structured properties become strings and the timestamp/level are reparsed from text.</div>
                     </div>
+                    <h2>Metrics</h2>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableMetrics" name="EnableMetrics" type="checkbox" is="emby-checkbox" />
+                            <span>Enable metric export</span>
+                        </label>
+                        <div class="fieldDescription">Master switch. When off, no metric panels register regardless of their individual toggles.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableSessionMetrics" name="EnableSessionMetrics" type="checkbox" is="emby-checkbox" />
+                            <span>Session metrics</span>
+                        </label>
+                        <div class="fieldDescription">Active sessions gauge, playback start/stop counters, playback duration histogram, and transcode reason counter. Driven by ISessionManager events.</div>
+                    </div>
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                             <span>Save</span>
@@ -59,6 +74,8 @@
                         document.querySelector('#ServiceName').value = config.ServiceName || '';
                         document.querySelector('#MinimumLevel').value = config.MinimumLevel || 'Debug';
                         document.querySelector('#BackfillBootLogs').checked = !!config.BackfillBootLogs;
+                        document.querySelector('#EnableMetrics').checked = !!config.EnableMetrics;
+                        document.querySelector('#EnableSessionMetrics').checked = !!config.EnableSessionMetrics;
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -71,6 +88,8 @@
                     config.ServiceName = document.querySelector('#ServiceName').value;
                     config.MinimumLevel = document.querySelector('#MinimumLevel').value;
                     config.BackfillBootLogs = document.querySelector('#BackfillBootLogs').checked;
+                    config.EnableMetrics = document.querySelector('#EnableMetrics').checked;
+                    config.EnableSessionMetrics = document.querySelector('#EnableSessionMetrics').checked;
                     ApiClient.updatePluginConfiguration(JellytelConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
