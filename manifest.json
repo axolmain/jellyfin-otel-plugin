@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.0.1.1",
+        "changelog": "See release notes at https://github.com/axolmain/jellyfin-otel-plugin/releases/download/v1.0.1.1",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/axolmain/jellyfin-otel-plugin/releases/download/v1.0.1.1/jellytel_1.0.1.1.zip",
+        "checksum": "d886948887f6f6ca4ae35226d8f93c79",
+        "timestamp": "2026-05-14T02:40:58Z"
+      },
+      {
         "version": "1.0.1.0",
         "changelog": "See release notes at https://github.com/axolmain/jellyfin-otel-plugin/releases/download/v1.0.1.0",
         "targetAbi": "10.11.0.0",
