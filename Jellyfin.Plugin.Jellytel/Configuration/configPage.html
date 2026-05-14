@@ -19,6 +19,18 @@
                         <input id="ServiceName" name="ServiceName" type="text" is="emby-input" />
                         <div class="fieldDescription">Value reported as the service.name resource attribute.</div>
                     </div>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="MinimumLevel">Minimum Log Level</label>
+                        <select id="MinimumLevel" name="MinimumLevel" is="emby-select">
+                            <option value="Verbose">Verbose</option>
+                            <option value="Debug">Debug</option>
+                            <option value="Information">Information</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Error">Error</option>
+                            <option value="Fatal">Fatal</option>
+                        </select>
+                        <div class="fieldDescription">Events below this level are not exported via OTLP. Jellyfin's normal console/file logging is unaffected.</div>
+                    </div>
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="BackfillBootLogs" name="BackfillBootLogs" type="checkbox" is="emby-checkbox" />
@@ -45,6 +57,7 @@
                     ApiClient.getPluginConfiguration(JellytelConfig.pluginUniqueId).then(function (config) {
                         document.querySelector('#OtlpEndpoint').value = config.OtlpEndpoint || '';
                         document.querySelector('#ServiceName').value = config.ServiceName || '';
+                        document.querySelector('#MinimumLevel').value = config.MinimumLevel || 'Debug';
                         document.querySelector('#BackfillBootLogs').checked = !!config.BackfillBootLogs;
                         Dashboard.hideLoadingMsg();
                     });
@@ -56,6 +69,7 @@
                 ApiClient.getPluginConfiguration(JellytelConfig.pluginUniqueId).then(function (config) {
                     config.OtlpEndpoint = document.querySelector('#OtlpEndpoint').value;
                     config.ServiceName = document.querySelector('#ServiceName').value;
+                    config.MinimumLevel = document.querySelector('#MinimumLevel').value;
                     config.BackfillBootLogs = document.querySelector('#BackfillBootLogs').checked;
                     ApiClient.updatePluginConfiguration(JellytelConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

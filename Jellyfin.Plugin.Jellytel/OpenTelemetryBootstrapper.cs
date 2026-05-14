@@ -128,11 +128,13 @@ public class OpenTelemetryBootstrapper : IHostedService
         try
         {
             var hostLogger = _hostOriginalLogger;
+            var minimumLevel = config?.MinimumLevel ?? LogEventLevel.Debug;
             var newLogger = new LoggerConfiguration()
                 .MinimumLevel.Verbose()
                 .WriteTo.Logger(hostLogger)
                 .WriteTo.OpenTelemetry(opts =>
                 {
+                    opts.RestrictedToMinimumLevel = minimumLevel;
                     opts.Endpoint = logsEndpoint;
                     opts.Protocol = OtlpProtocol.HttpProtobuf;
                     opts.ResourceAttributes = new Dictionary<string, object>
@@ -148,9 +150,10 @@ public class OpenTelemetryBootstrapper : IHostedService
             previous?.Dispose();
 
             _logger.LogInformation(
-                "Jellytel: OpenTelemetry log export enabled. endpoint={Endpoint} service.name={ServiceName}",
+                "Jellytel: OpenTelemetry log export enabled. endpoint={Endpoint} service.name={ServiceName} minimumLevel={MinimumLevel}",
                 logsEndpoint,
-                serviceName);
+                serviceName,
+                minimumLevel);
 
             if (!_backfillRan && config!.BackfillBootLogs)
             {

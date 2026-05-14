@@ -1,4 +1,5 @@
 using MediaBrowser.Model.Plugins;
+using Serilog.Events;
 
 namespace Jellyfin.Plugin.Jellytel.Configuration;
 
@@ -15,6 +16,7 @@ public class PluginConfiguration : BasePluginConfiguration
         OtlpEndpoint = string.Empty;
         ServiceName = "jellyfin";
         BackfillBootLogs = false;
+        MinimumLevel = LogEventLevel.Debug;
     }
 
     /// <summary>
@@ -35,4 +37,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// structured properties since events are reparsed from text.
     /// </summary>
     public bool BackfillBootLogs { get; set; }
+
+    /// <summary>
+    /// Gets or sets the minimum Serilog level for events forwarded to the
+    /// OpenTelemetry sink. Events below this level are still written to
+    /// Jellyfin's normal console/file pipeline but are not exported.
+    /// </summary>
+    public LogEventLevel MinimumLevel { get; set; }
 }
