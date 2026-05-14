@@ -64,6 +64,11 @@ jobs:
           cp publish/OpenTelemetry.Api.dll staging/
           cp publish/OpenTelemetry.Api.ProviderBuilderExtensions.dll staging/
           cp publish/OpenTelemetry.Exporter.OpenTelemetryProtocol.dll staging/
+          # OTel 1.15.3 binaries reference System.Diagnostics.DiagnosticSource 10.0.0,
+          # which net9-bundled Jellyfin server distributions don't ship. Bundle our
+          # copy so the plugin's AssemblyLoadContext can satisfy the reference
+          # without affecting host code paths.
+          cp publish/System.Diagnostics.DiagnosticSource.dll staging/
           cp publish/Google.Protobuf.dll staging/ 2>/dev/null || true
           cp publish/Grpc.*.dll staging/ 2>/dev/null || true
           (cd staging && zip -r "../$ZIP" .)
