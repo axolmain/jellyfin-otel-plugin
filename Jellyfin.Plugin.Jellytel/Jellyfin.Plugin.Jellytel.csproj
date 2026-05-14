@@ -1,7 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!--
+      Single knob: pin this to the Jellyfin server version we target. Both the
+      Jellyfin.* NuGet package versions and the .NET TFM are derived from it
+      below. For the 10.11.x line we stay on net9.0 — net9-targeted plugin
+      DLLs load into both net9 (10.11.0–10.11.6) and net10 (10.11.7+) hosts
+      via .NET runtime forward compatibility.
+    -->
+    <JellyfinVersion>10.11.8</JellyfinVersion>
+
+    <!--
+      NuGet publishes Jellyfin.* at every server patch version for the 10.11
+      line, so this is a 1:1 mapping today. Older lines (10.10.x) historically
+      collapsed minor patches to .0 NuGet builds; we'd add Conditions here if
+      we ever needed to support them again.
+    -->
+    <JellyfinNugetVersion>$(JellyfinVersion)</JellyfinNugetVersion>
+
+    <TargetFramework Condition="$(JellyfinVersion.StartsWith('10.11'))">net9.0</TargetFramework>
+
     <RootNamespace>Jellyfin.Plugin.Jellytel</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -11,10 +29,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.3" >
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinNugetVersion)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="10.11.3">
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinNugetVersion)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
     <PackageReference Include="Serilog" Version="4.2.0">
@@ -23,6 +41,15 @@
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.1.1" />
     <PackageReference Include="OpenTelemetry" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <!--
+      Microsoft.Data.Sqlite ships with the Jellyfin server runtime. We
+      compile against the same API surface but exclude the runtime assets
+      so plugin loads use the host's already-loaded assembly. The version
+      tracks what Jellyfin's Directory.Packages.props pins.
+    -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.7">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +61,8 @@
   <ItemGroup>
     <None Remove="Configuration\configPage.html" />
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <None Remove="Configuration\dashboard.html" />
+    <EmbeddedResource Include="Configuration\dashboard.html" />
   </ItemGroup>
 
 </Project>

@@ -19,6 +19,10 @@ public class PluginConfiguration : BasePluginConfiguration
         MinimumLevel = LogEventLevel.Debug;
         EnableMetrics = false;
         EnableSessionMetrics = true;
+        LocalBufferEnabled = false;
+        LocalBufferSampleIntervalSeconds = 30;
+        LocalBufferRetentionHours = 168;
+        LocalBufferMaxRows = 500_000;
     }
 
     /// <summary>
@@ -60,4 +64,33 @@ public class PluginConfiguration : BasePluginConfiguration
     /// histogram, transcode reason counter) is enabled.
     /// </summary>
     public bool EnableSessionMetrics { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the local SQLite time-series
+    /// buffer is enabled. Independent of OTLP export — both can run together.
+    /// When on, the plugin records the same metrics it ships to OTLP into a
+    /// local database so admins can view recent history in the embedded
+    /// dashboard page without configuring an external collector.
+    /// </summary>
+    public bool LocalBufferEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets how often the gauge snapshotter records active-session
+    /// and other observable-gauge values. Counter-style events (playback
+    /// start/stop, transcode reasons) are recorded as they happen and are
+    /// not gated by this interval.
+    /// </summary>
+    public int LocalBufferSampleIntervalSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the retention window in hours. Samples older than this
+    /// are deleted opportunistically on writes and at startup.
+    /// </summary>
+    public int LocalBufferRetentionHours { get; set; }
+
+    /// <summary>
+    /// Gets or sets the hard ceiling on rows. Acts as a safety cap in case
+    /// retention misses something (e.g. clock skew or a burst of events).
+    /// </summary>
+    public int LocalBufferMaxRows { get; set; }
 }

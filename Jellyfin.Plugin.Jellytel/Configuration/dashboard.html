@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Jellytel Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
+    <style>
+        .jellytel-container { padding: 1.5em; }
+        .jellytel-status {
+            background: rgba(255,255,255,0.04);
+            border-left: 3px solid #00a4dc;
+            padding: 0.8em 1em;
+            margin-bottom: 1.5em;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .jellytel-status.warn { border-left-color: #e8a23a; }
+        .jellytel-status.err  { border-left-color: #d44141; }
+        .jellytel-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 1em;
+        }
+        .jellytel-card {
+            background: rgba(255,255,255,0.04);
+            border-radius: 6px;
+            padding: 1em;
+        }
+        .jellytel-card h3 {
+            margin: 0 0 0.5em 0;
+            font-size: 0.95em;
+            font-weight: 500;
+            opacity: 0.9;
+        }
+        .jellytel-card .value {
+            font-size: 1.6em;
+            font-weight: 300;
+            margin-bottom: 0.3em;
+        }
+        .jellytel-card .chart { height: 80px; }
+        .jellytel-card .empty {
+            opacity: 0.5;
+            font-style: italic;
+            font-size: 0.85em;
+            padding: 1.5em 0;
+            text-align: center;
+        }
+        .jellytel-range {
+            display: flex;
+            gap: 0.5em;
+            margin-bottom: 1em;
+        }
+        .jellytel-range button {
+            background: rgba(255,255,255,0.06);
+            color: inherit;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 0.3em 0.8em;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        .jellytel-range button.active {
+            background: #00a4dc;
+            border-color: #00a4dc;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+<div id="JellytelDashboardPage" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary jellytel-container">
+            <h1 style="margin-top:0">Jellytel</h1>
+            <div id="exportStatus" class="jellytel-status">Loading export status…</div>
+
+            <div class="jellytel-range">
+                <button data-hours="1">1h</button>
+                <button data-hours="6">6h</button>
+                <button data-hours="24" class="active">24h</button>
+                <button data-hours="168">7d</button>
+            </div>
+
+            <div id="grid" class="jellytel-grid"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+    <script type="text/javascript">
+    (function () {
+        var METRICS = [
+            { name: 'jellyfin.sessions.active',    label: 'Active sessions',    agg: 'avg', format: function (v) { return Math.round(v); } },
+            { name: 'jellyfin.playback.started',   label: 'Playback starts',    agg: 'sum', format: function (v) { return Math.round(v); } },
+            { name: 'jellyfin.playback.stopped',   label: 'Playback stops',     agg: 'sum', format: function (v) { return Math.round(v); } },
+            { name: 'jellyfin.playback.duration',  label: 'Playback duration',  agg: 'sum', format: function (v) { return (v / 60).toFixed(1) + ' min'; } },
+            { name: 'jellyfin.transcode.reasons',  label: 'Transcode reasons',  agg: 'sum', format: function (v) { return Math.round(v); } }
+        ];
+
+        var rangeHours = 24;
+        var charts = {};
+
+        function api(path) {
+            return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(path), dataType: 'json' });
+        }
+
+        function bucketForRange(hours) {
+            if (hours <= 1)   return 60_000;       //  1 min
+            if (hours <= 6)   return 300_000;      //  5 min
+            if (hours <= 24)  return 600_000;      // 10 min
+            return 3_600_000;                       //  1 hour
+        }
+
+        function renderExportStatus(s) {
+            var el = document.getElementById('exportStatus');
+            if (!s.OtlpConfigured) {
+                el.className = 'jellytel-status warn';
+                el.textContent = 'OTLP export disabled — metrics are buffered locally only. Configure the OTLP endpoint to start exporting.';
+                return;
+            }
+            var bits = ['OTLP export enabled.'];
+            if (s.LastExportSuccessMs) {
+                bits.push('Last success: ' + new Date(s.LastExportSuccessMs).toLocaleString());
+            }
+            if (s.LastError) {
+                bits.push('Last error: ' + s.LastError);
+                el.className = 'jellytel-status err';
+            } else {
+                el.className = 'jellytel-status';
+            }
+            el.textContent = bits.join(' ');
+        }
+
+        function buildCard(m) {
+            var card = document.createElement('div');
+            card.className = 'jellytel-card';
+            card.innerHTML =
+                '<h3>' + m.label + '</h3>' +
+                '<div class="value" data-value>—</div>' +
+                '<div class="chart" data-chart></div>';
+            return card;
+        }
+
+        function loadSnapshot() {
+            return api('Jellytel/Snapshot').then(function (snap) {
+                if (!snap.BufferEnabled) {
+                    document.getElementById('grid').innerHTML =
+                        '<div class="jellytel-card"><div class="empty">Local buffer is disabled — enable it in the Jellytel plugin configuration.</div></div>';
+                    return false;
+                }
+                var byName = {};
+                (snap.Metrics || []).forEach(function (m) { byName[m.Metric] = m; });
+                METRICS.forEach(function (m) {
+                    var card = document.querySelector('[data-metric="' + m.name + '"]');
+                    if (!card) return;
+                    var s = byName[m.name];
+                    card.querySelector('[data-value]').textContent = s ? m.format(s.Value) : '—';
+                });
+                return true;
+            });
+        }
+
+        function loadSeries(m) {
+            var now = Date.now();
+            var from = now - rangeHours * 3_600_000;
+            var bucket = bucketForRange(rangeHours);
+            var url = 'Jellytel/Series?metric=' + encodeURIComponent(m.name) +
+                      '&fromMs=' + from + '&toMs=' + now + '&bucketMs=' + bucket;
+            return api(url).then(function (series) {
+                var card = document.querySelector('[data-metric="' + m.name + '"]');
+                if (!card) return;
+                var chartEl = card.querySelector('[data-chart]');
+                var points = series.Points || [];
+                if (points.length === 0) {
+                    chartEl.innerHTML = '<div class="empty">No data in range</div>';
+                    return;
+                }
+                if (typeof uPlot === 'undefined') {
+                    chartEl.innerHTML = '<div class="empty">(chart library failed to load)</div>';
+                    return;
+                }
+                var xs = points.map(function (p) { return p.TimestampMs / 1000; });
+                var ys = points.map(function (p) { return p.Value; });
+
+                if (charts[m.name]) {
+                    charts[m.name].setData([xs, ys]);
+                    return;
+                }
+                charts[m.name] = new uPlot({
+                    width: chartEl.clientWidth,
+                    height: 80,
+                    cursor: { show: false },
+                    legend: { show: false },
+                    scales: { x: { time: true } },
+                    axes: [{ show: false }, { show: false }],
+                    series: [{}, { stroke: '#00a4dc', width: 1.5, fill: 'rgba(0,164,220,0.15)' }]
+                }, [xs, ys], chartEl);
+            });
+        }
+
+        function refresh() {
+            loadSnapshot().then(function (ok) {
+                if (!ok) return;
+                METRICS.forEach(loadSeries);
+            });
+            api('Jellytel/ExportStatus').then(renderExportStatus);
+        }
+
+        document.querySelector('#JellytelDashboardPage').addEventListener('pageshow', function () {
+            // build the cards once per page show
+            var grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            charts = {};
+            METRICS.forEach(function (m) {
+                var card = buildCard(m);
+                card.setAttribute('data-metric', m.name);
+                grid.appendChild(card);
+            });
+
+            refresh();
+            window.jellytelTimer = setInterval(refresh, 30_000);
+        });
+
+        document.querySelector('#JellytelDashboardPage').addEventListener('pagehide', function () {
+            if (window.jellytelTimer) { clearInterval(window.jellytelTimer); window.jellytelTimer = null; }
+            Object.keys(charts).forEach(function (k) { charts[k].destroy(); });
+            charts = {};
+        });
+
+        document.querySelectorAll('.jellytel-range button').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('.jellytel-range button').forEach(function (b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                rangeHours = parseInt(btn.getAttribute('data-hours'), 10);
+                Object.keys(charts).forEach(function (k) { charts[k].destroy(); });
+                charts = {};
+                METRICS.forEach(loadSeries);
+            });
+        });
+    })();
+    </script>
+</div>
+</body>
+</html>

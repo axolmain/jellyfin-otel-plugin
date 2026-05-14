@@ -60,6 +60,10 @@ jobs:
           # are host-provided — bundling them causes assembly version conflicts.
           cp publish/${PLUGIN_NAME}.dll staging/
           cp publish/Serilog.Sinks.OpenTelemetry.dll staging/
+          cp publish/OpenTelemetry.dll staging/
+          cp publish/OpenTelemetry.Api.dll staging/
+          cp publish/OpenTelemetry.Api.ProviderBuilderExtensions.dll staging/
+          cp publish/OpenTelemetry.Exporter.OpenTelemetryProtocol.dll staging/
           cp publish/Google.Protobuf.dll staging/ 2>/dev/null || true
           cp publish/Grpc.*.dll staging/ 2>/dev/null || true
           (cd staging && zip -r "../$ZIP" .)

@@ -53,6 +53,31 @@
                         </label>
                         <div class="fieldDescription">Active sessions gauge, playback start/stop counters, playback duration histogram, and transcode reason counter. Driven by ISessionManager events.</div>
                     </div>
+
+                    <h2>Local time-series buffer</h2>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="LocalBufferEnabled" name="LocalBufferEnabled" type="checkbox" is="emby-checkbox" />
+                            <span>Enable local buffer</span>
+                        </label>
+                        <div class="fieldDescription">Record metrics into a local SQLite database so recent history is viewable in the Jellytel Dashboard sidebar entry even when no OTLP collector is configured. Independent of OTLP export.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="LocalBufferSampleIntervalSeconds">Gauge sample interval (seconds)</label>
+                        <input id="LocalBufferSampleIntervalSeconds" name="LocalBufferSampleIntervalSeconds" type="number" min="5" is="emby-input" />
+                        <div class="fieldDescription">How often the active-session count and other observable gauges are sampled. Counter events (playback start/stop, transcode reasons) are recorded as they happen and are not gated by this interval.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="LocalBufferRetentionHours">Retention (hours)</label>
+                        <input id="LocalBufferRetentionHours" name="LocalBufferRetentionHours" type="number" min="1" is="emby-input" />
+                        <div class="fieldDescription">Samples older than this are deleted. Default 168h (7 days).</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="LocalBufferMaxRows">Max rows (safety cap)</label>
+                        <input id="LocalBufferMaxRows" name="LocalBufferMaxRows" type="number" min="1000" is="emby-input" />
+                        <div class="fieldDescription">Hard ceiling on the total number of rows. Excess rows are deleted oldest-first.</div>
+                    </div>
+
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                             <span>Save</span>
@@ -76,6 +101,10 @@
                         document.querySelector('#BackfillBootLogs').checked = !!config.BackfillBootLogs;
                         document.querySelector('#EnableMetrics').checked = !!config.EnableMetrics;
                         document.querySelector('#EnableSessionMetrics').checked = !!config.EnableSessionMetrics;
+                        document.querySelector('#LocalBufferEnabled').checked = !!config.LocalBufferEnabled;
+                        document.querySelector('#LocalBufferSampleIntervalSeconds').value = config.LocalBufferSampleIntervalSeconds || 30;
+                        document.querySelector('#LocalBufferRetentionHours').value = config.LocalBufferRetentionHours || 168;
+                        document.querySelector('#LocalBufferMaxRows').value = config.LocalBufferMaxRows || 500000;
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -90,6 +119,10 @@
                     config.BackfillBootLogs = document.querySelector('#BackfillBootLogs').checked;
                     config.EnableMetrics = document.querySelector('#EnableMetrics').checked;
                     config.EnableSessionMetrics = document.querySelector('#EnableSessionMetrics').checked;
+                    config.LocalBufferEnabled = document.querySelector('#LocalBufferEnabled').checked;
+                    config.LocalBufferSampleIntervalSeconds = parseInt(document.querySelector('#LocalBufferSampleIntervalSeconds').value, 10) || 30;
+                    config.LocalBufferRetentionHours = parseInt(document.querySelector('#LocalBufferRetentionHours').value, 10) || 168;
+                    config.LocalBufferMaxRows = parseInt(document.querySelector('#LocalBufferMaxRows').value, 10) || 500000;
                     ApiClient.updatePluginConfiguration(JellytelConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });

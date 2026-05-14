@@ -1,7 +1,7 @@
 ---
 name: "Jellytel"
 guid: "f7a99fe2-4dd9-4a55-8d6d-4e02914c54f6"
-version: "1.0.1.0"
+version: "1.0.1.1"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "OpenTelemetry log exporter for Jellyfin"
@@ -15,11 +15,6 @@ owner: "axolmain"
 artifacts:
 - "Jellyfin.Plugin.Jellytel.dll"
 changelog: >
-  - Add OpenTelemetry metrics pipeline alongside the existing logs export,
-    with a per-panel toggle architecture and a first SessionMetrics panel
-    mirroring the Jellyfin dashboard's active sessions, playback start/stop,
-    duration, and transcode reason surface.
-  - Add user-configurable minimum log level for OTLP export so operators can
-    decide what severity gets shipped to their collector.
-  - Refactor logs code into Logs/ namespace and extract BootLogReplayer for
-    clearer separation between the logs and metrics pipelines.
+  - Package the OpenTelemetry SDK assemblies (1.0.1.0 shipped without them
+    and failed to load on startup with a FileNotFoundException for
+    OpenTelemetry.dll).

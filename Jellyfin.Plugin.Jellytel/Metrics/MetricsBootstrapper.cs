@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Jellytel.Configuration;
+using Jellyfin.Plugin.Jellytel.LocalBuffer;
 using MediaBrowser.Model.Plugins;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,7 @@ public class MetricsBootstrapper : IHostedService
 {
     private readonly ILogger<MetricsBootstrapper> _logger;
     private readonly IEnumerable<IMetricPanel> _panels;
+    private readonly ExportStatusTracker _exportStatus;
     private readonly List<IMetricPanel> _registered = new();
     private MeterProvider? _meterProvider;
 
@@ -31,12 +33,15 @@ public class MetricsBootstrapper : IHostedService
     /// </summary>
     /// <param name="logger">Diagnostic logger.</param>
     /// <param name="panels">Panels resolved from DI.</param>
+    /// <param name="exportStatus">Status tracker for the dashboard panel.</param>
     public MetricsBootstrapper(
         ILogger<MetricsBootstrapper> logger,
-        IEnumerable<IMetricPanel> panels)
+        IEnumerable<IMetricPanel> panels,
+        ExportStatusTracker exportStatus)
     {
         _logger = logger;
         _panels = panels;
+        _exportStatus = exportStatus;
     }
 
     /// <inheritdoc />
@@ -143,6 +148,8 @@ public class MetricsBootstrapper : IHostedService
                 }
             }
 
+            _exportStatus.SetOtlpConfigured(true);
+
             _logger.LogInformation(
                 "Jellytel metrics: enabled. endpoint={Endpoint} service.name={ServiceName} panels={PanelCount}",
                 metricsEndpoint,
@@ -152,6 +159,7 @@ public class MetricsBootstrapper : IHostedService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Jellytel metrics: failed to initialize MeterProvider.");
+            _exportStatus.MarkFailure(ex.Message);
             Teardown();
         }
     }
@@ -174,5 +182,6 @@ public class MetricsBootstrapper : IHostedService
 
         _meterProvider?.Dispose();
         _meterProvider = null;
+        _exportStatus.SetOtlpConfigured(false);
     }
 }

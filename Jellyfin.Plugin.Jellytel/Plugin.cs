@@ -39,12 +39,22 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {
+        var ns = GetType().Namespace;
         return
         [
             new PluginPageInfo
             {
                 Name = Name,
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", ns)
+            },
+            new PluginPageInfo
+            {
+                Name = "JellytelDashboard",
+                DisplayName = "Jellytel Dashboard",
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.dashboard.html", ns),
+                EnableInMainMenu = true,
+                MenuSection = "server",
+                MenuIcon = "insights"
             }
         ];
     }
