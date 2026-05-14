@@ -56,20 +56,17 @@ jobs:
           ZIP="jellytel_${VERSION}.zip"
           mkdir staging
           # Ship the plugin dll plus only the dependencies Jellyfin does NOT already provide.
-          # Specifically skip Serilog.dll and Microsoft.Extensions.*.Abstractions.dll, which
-          # are host-provided — bundling them causes assembly version conflicts.
+          # Skipped intentionally:
+          #   - Serilog.dll, Microsoft.Extensions.*.Abstractions.dll — host-provided.
+          #   - Microsoft.Data.Sqlite.dll — host-provided (ExcludeAssets=runtime in csproj).
+          #   - System.Diagnostics.DiagnosticSource.dll — host-provided. Bundling forced
+          #     a 9.x vs 10.x type-load conflict in earlier OTel SDK builds.
+          # The OpenTelemetry SDK packages have been removed entirely; the plugin now uses
+          # System.Diagnostics.Metrics directly and ships a custom OTLP/HTTP exporter
+          # under Metrics/Export/. Only Serilog's OTLP sink + protobuf/grpc bits remain.
           cp publish/${PLUGIN_NAME}.dll staging/
           cp publish/Serilog.Sinks.OpenTelemetry.dll staging/
-          cp publish/OpenTelemetry.dll staging/
-          cp publish/OpenTelemetry.Api.dll staging/
-          cp publish/OpenTelemetry.Api.ProviderBuilderExtensions.dll staging/
-          cp publish/OpenTelemetry.Exporter.OpenTelemetryProtocol.dll staging/
-          # OTel 1.15.3 binaries reference System.Diagnostics.DiagnosticSource 10.0.0,
-          # which net9-bundled Jellyfin server distributions don't ship. Bundle our
-          # copy so the plugin's AssemblyLoadContext can satisfy the reference
-          # without affecting host code paths.
-          cp publish/System.Diagnostics.DiagnosticSource.dll staging/
-          cp publish/Google.Protobuf.dll staging/ 2>/dev/null || true
+          cp publish/Google.Protobuf.dll staging/
           cp publish/Grpc.*.dll staging/ 2>/dev/null || true
           (cd staging && zip -r "../$ZIP" .)
           CHECKSUM=$(md5sum "$ZIP" | cut -d' ' -f1)

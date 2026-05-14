@@ -40,12 +40,22 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public IEnumerable<PluginPageInfo> GetPages()
     {
         var ns = GetType().Namespace;
+
+        // jellyfin-web picks the "Settings" target from this list as
+        //   pages.length == 1 ? pages[0] : pages.find(p => p.EnableInMainMenu) ?? pages[0]
+        // So the config form MUST be the first page with EnableInMainMenu = true,
+        // otherwise the Settings button opens the wrong page. Both pages keep
+        // EnableInMainMenu = true so they each get their own admin sidebar entry.
         return
         [
             new PluginPageInfo
             {
                 Name = Name,
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", ns)
+                DisplayName = "Jellytel Settings",
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", ns),
+                EnableInMainMenu = true,
+                MenuSection = "server",
+                MenuIcon = "settings"
             },
             new PluginPageInfo
             {

@@ -50,17 +50,19 @@ public class JellytelController : ControllerBase
     /// <returns>Snapshot DTO with one entry per metric.</returns>
     [HttpGet("Snapshot")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public ActionResult<SnapshotDto> GetSnapshot()
     {
+        // Buffer disabled is a normal "the user didn't turn this on" state,
+        // not a service failure — return 200 with BufferEnabled=false so the
+        // dashboard page can render its empty-state without catching errors.
         var store = _buffer.Store;
         if (store is null)
         {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new SnapshotDto
+            return new SnapshotDto
             {
                 BufferEnabled = false,
                 Metrics = Array.Empty<SnapshotEntry>(),
-            });
+            };
         }
 
         var all = CounterMetrics.Concat(GaugeMetrics).ToArray();
@@ -90,7 +92,6 @@ public class JellytelController : ControllerBase
     [HttpGet("Series")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public ActionResult<SeriesDto> GetSeries(
         [FromQuery] string metric,
         [FromQuery] long? fromMs = null,
@@ -102,18 +103,26 @@ public class JellytelController : ControllerBase
             return BadRequest("metric is required");
         }
 
-        var store = _buffer.Store;
-        if (store is null)
-        {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable);
-        }
-
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var from = fromMs ?? (now - (TimeSpan.FromHours(24).Ticks / TimeSpan.TicksPerMillisecond));
         var to = toMs ?? now;
         var bucket = bucketMs ?? 60_000;
-
         var aggregation = Array.IndexOf(GaugeMetrics, metric) >= 0 ? "avg" : "sum";
+
+        // Buffer disabled → empty series, not an error. Dashboard renders the
+        // empty-state in the chart card.
+        var store = _buffer.Store;
+        if (store is null)
+        {
+            return new SeriesDto
+            {
+                Metric = metric,
+                Aggregation = aggregation,
+                BucketMs = bucket,
+                Points = Array.Empty<SeriesPoint>(),
+            };
+        }
+
         var rows = store.ReadSeries(metric, from, to, bucket, aggregation);
 
         return new SeriesDto

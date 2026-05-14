@@ -69,6 +69,24 @@ dotnet build -c Release
 
 For a local install + Jellyfin debug session, see [`.vscode/tasks.json`](.vscode/tasks.json) and [`RELEASING.md`](RELEASING.md).
 
+## Local development
+
+Iterate against a throwaway Jellyfin in Docker:
+
+```bash
+./scripts/dev-test.sh            # interactive menu
+./scripts/dev-test.sh reload     # rebuild + restage + restart
+./scripts/dev-test.sh status     # what's running, what's loaded
+./scripts/dev-test.sh logs       # tail filtered to Jellytel
+```
+
+Defaults: `jellyfin/jellyfin:10.11.8` on `http://localhost:8096`, state under
+`~/jellytel-dev/`. The dev container is a clean Jellyfin every time, so the
+plugin's behaviour during install/load is exactly what an end user will see.
+
+Architecture and design rationale live under [`docs/`](docs/). Internal
+gotchas and the dev workflow are documented in [`CLAUDE.md`](CLAUDE.md).
+
 ## License
 
 GPLv3 — see [`LICENSE`](LICENSE). Plugins linking against Jellyfin are GPLv3 by transitivity.

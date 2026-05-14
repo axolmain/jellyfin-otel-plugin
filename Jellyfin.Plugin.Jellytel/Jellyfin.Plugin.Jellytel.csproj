@@ -35,21 +35,49 @@
     <PackageReference Include="Jellyfin.Model" Version="$(JellyfinNugetVersion)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+    <!--
+      Serilog is host-provided. Pin to the exact version Jellyfin 10.11.x ships
+      (4.2.0) so plugin assembly references match what the host's
+      AssemblyLoadContext can satisfy at load time. If the plugin is built
+      against a newer Serilog and that DLL isn't shipped, the runtime throws
+      FileNotFoundException for the missing assembly version.
+    -->
     <PackageReference Include="Serilog" Version="4.2.0">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+    <!--
+      Sink 4.1.1 only requires Serilog >= 4.0.0 and doesn't drag in newer
+      Serilog majors. Newer sink releases pull Serilog 4.3+ which the host
+      doesn't have.
+    -->
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.1.1" />
-    <PackageReference Include="OpenTelemetry" Version="1.15.3" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <!--
+      We do NOT ship the OpenTelemetry SDK. Its 1.13+ releases require
+      System.Diagnostics.DiagnosticSource 10.x, which the net9 Jellyfin
+      host cannot load (TypeLoadException on OpenTelemetryMetricsListener).
+      Older OTel SDK versions carry unresolved CVEs. Instead we drive
+      metric collection from a plain System.Diagnostics.Metrics.MeterListener
+      and export via a custom OTLP/HTTP exporter under Metrics/Export/.
+    -->
+    <PackageReference Include="Google.Protobuf" Version="3.30.1" />
+    <PackageReference Include="Grpc.Tools" Version="2.68.1" PrivateAssets="All" />
     <!--
       Microsoft.Data.Sqlite ships with the Jellyfin server runtime. We
-      compile against the same API surface but exclude the runtime assets
-      so plugin loads use the host's already-loaded assembly. The version
-      tracks what Jellyfin's Directory.Packages.props pins.
+      compile against the same API surface but exclude runtime assets so
+      plugin loads bind against the host's already-loaded assembly.
+      Version pinned to the major shipped by the targeted Jellyfin line:
+      10.11.x bundles 9.0.x (net9 host). The newer 10.x on Jellyfin's
+      master branch is for a future net10 host; do NOT use it here or the
+      plugin gets FileNotFoundException at runtime because the binding
+      reference can't be satisfied.
     -->
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.7">
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Proto\**\*.proto" GrpcServices="None" ProtoRoot="Proto" />
   </ItemGroup>
 
   <ItemGroup>
