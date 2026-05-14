@@ -14,7 +14,15 @@ category: "General"
 owner: "axolmain"
 artifacts:
 - "Jellyfin.Plugin.Jellytel.dll"
-changelog: >
+changelog: |
   - Package the OpenTelemetry SDK assemblies (1.0.1.0 shipped without them
     and failed to load on startup with a FileNotFoundException for
     OpenTelemetry.dll).
+  - Add a local SQLite time-series buffer that records playback events and
+    periodic gauge snapshots so the plugin retains a recent history even
+    when the OTLP collector is unreachable.
+  - Add an in-plugin dashboard page that visualises the buffered series and
+    surfaces OTLP export status, accessible from the plugin configuration.
+  - Restructure the csproj around a single `JellyfinVersion` knob so the
+    Jellyfin.* package versions and target framework stay in sync; pinned
+    to 10.11.8 on net9.0 (loads into both net9 and net10 Jellyfin hosts).
