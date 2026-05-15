@@ -23,8 +23,8 @@ one on or off does not affect the other.
                               │                              │
               ┌───────────────┴───────────────┐              │
               ▼                               ▼              ▼
-        EventRecorder                  GaugeSnapshotter   MeterProvider
-              │                               │              │
+        EventRecorder                  GaugeSnapshotter   MeterListener +
+              │                               │           OtlpHttpExporter
               │  (PlaybackStart/Stopped,      │ (periodic    │
               │   TranscodeReasons, …)        │  sampling)   │
               ▼                               ▼              ▼
@@ -130,7 +130,7 @@ Latest value per tracked metric.
 }
 ```
 
-Returns `503` with `BufferEnabled: false` when the buffer is disabled.
+Returns `200` with `BufferEnabled: false` and an empty `Metrics` array when the buffer is disabled. "Feature is off in config" is a normal 200 state, not a service failure — the dashboard JS expects this shape so the page renders gracefully when the user hasn't enabled the buffer yet.
 
 ### `GET /Jellytel/Series?metric=…&fromMs=…&toMs=…&bucketMs=…`
 
@@ -163,10 +163,14 @@ OTLP exporter status — drives the status panel at the top of the dashboard.
 }
 ```
 
-`OtlpConfigured` is the bootstrapper's view of whether the OTLP exporter was
-successfully built. Per-export success/failure tracking is wired through
-`ExportStatusTracker` but not yet hooked into individual export callbacks;
-that requires shimming the OTel exporter and is left for a follow-up.
+`OtlpConfigured` is the bootstrapper's view of whether an OTLP exporter was
+successfully built (true when either the metrics or traces pipeline holds a
+real `OtlpHttp(Trace)Exporter`, false for `Null(Trace)Exporter`). The metrics
+and trace exporters both call `MarkSuccess()` / `MarkFailure(error)` on every
+POST, so `LastExportSuccessMs` / `LastExportFailureMs` / `LastError` reflect
+the most recent attempt across signals. The shared tracker means the dashboard
+cannot yet distinguish "metrics OTLP works, traces OTLP doesn't" — see
+[`exporter-architecture.md`](exporter-architecture.md) for the deferred split.
 
 ---
 
@@ -192,10 +196,12 @@ appears in the admin sidebar under the server section.
   retention windows mean many rows; the configurable max-row cap is the
   safety valve. Tiered rollups would buy 10–100× retention at the cost of a
   downsampling job — not worth it for a v1.
-- **No per-export OTLP success/failure tracking.** The `ExportStatusTracker`
-  surface exists, but the OTel SDK doesn't expose first-class export
-  callbacks; wiring it up means a custom `BaseExporter<T>` shim. Status
-  shows "configured" / "not configured" only.
+- **No per-signal OTLP status.** The `ExportStatusTracker` is shared across
+  metrics and traces. Both pipelines call `MarkSuccess` / `MarkFailure`, so
+  the most recent result reflects whichever signal posted last. A per-signal
+  split (`OtlpMetricsConfigured` / `OtlpTracesConfigured`, plus per-signal
+  last-success/failure timestamps) is queued for if/when the dashboard needs
+  to surface them separately.
 - **No persistence of the OTLP send queue.** When OTLP is misconfigured the
   local buffer still records everything — that's the whole point — but the
   plugin does not retry-export buffered samples once OTLP comes online. The

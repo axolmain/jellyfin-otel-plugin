@@ -112,17 +112,25 @@ Buffer-ahead is **not** directly exposed. Most likely you derive it from `Playba
 
 The plugin wraps Serilog's static `Log.Logger` with a fan-out logger that writes to both the host pipeline and the OTLP sink. Reapply on `ConfigurationChanged`. Always restore the original on `StopAsync` so a disable doesn't silence Jellyfin.
 
-## Recommended OTel libraries
+### Metrics (current)
 
-For the planned metrics/traces work, use the standard OpenTelemetry .NET stack:
+Metrics flow through a hand-rolled pipeline built on `System.Diagnostics.Metrics.MeterListener` (BCL) — **not** the OpenTelemetry SDK, which can't load on net9 Jellyfin (CLAUDE.md trap #1). Panels (`Metrics/Panels/*Metrics.cs`) create instruments on `JellytelMeter.Instance`; `MetricsBootstrapper` wires the collector to an `IMetricExporter` (`OtlpHttpExporter` against `{endpoint}/v1/metrics` or `NullExporter` when no endpoint is set). The local SQLite buffer feeds off the same instruments. See [`exporter-architecture.md`](exporter-architecture.md) for the layering.
 
-- `OpenTelemetry.Extensions.Hosting` — registers the SDK against Jellyfin's `IServiceCollection`
-- `OpenTelemetry.Exporter.OpenTelemetryProtocol` — OTLP/gRPC and OTLP/HTTP
-- `OpenTelemetry.Instrumentation.AspNetCore` — free request traces and HTTP metrics for the Jellyfin REST API
-- `OpenTelemetry.Instrumentation.Runtime` — GC, threadpool, exception counters
-- `System.Diagnostics.Metrics.Meter` (BCL) — define your own counters/histograms; OTel picks them up automatically
+To add a new metric panel, mirror `Metrics/Panels/SessionMetrics.cs`: implement `IMetricPanel`, create instruments on `JellytelMeter.Instance`, register in `PluginServiceRegistrator`.
 
-Jellyfin already exposes a number of `System.Diagnostics.Metrics.Meter` instruments internally. Listing the host meter (e.g. via `MeterProviderBuilder.AddMeter("Jellyfin.*")`) often gets you metrics for free before you write any custom ones.
+### Traces (current)
+
+Traces use `System.Diagnostics.ActivityListener` (BCL) for the same reason — no OTel SDK. `TracesBootstrapper` attaches one listener that filters by `JellytelActivitySource.Name` plus the user's `TracedActivitySources` allowlist (CSV). Completed activities buffer in a bounded channel (10 000, `DropOldest`) and the export loop POSTs `ExportTraceServiceRequest` to `{endpoint}/v1/traces` every 15s. Drops surface as a `jellytel.traces.dropped` counter — the trace pipeline self-instruments through the metrics pipeline.
+
+In-plugin instrumentation should create activities on `JellytelActivitySource.Instance`; nothing else is wired by default. Users opt into Jellyfin's request activities by adding `Microsoft.AspNetCore` to `TracedActivitySources` from the config UI.
+
+## Why the OpenTelemetry SDK is not used
+
+OpenTelemetry SDK 1.13+ binds to `System.Diagnostics.DiagnosticSource >= 10.x`. Jellyfin's net9 host ships 9.x and unifies common assemblies across plugin AssemblyLoadContexts, so the SDK's `MeterListener` subclass tries to override a method that doesn't exist on the loaded 9.x base → `TypeLoadException` at plugin load. Older SDK versions don't have this conflict but carry unaccepted CVEs.
+
+Instead, the plugin drives collection directly from BCL `MeterListener` and `ActivityListener`, with two `IMetricExporter`/`ITraceExporter` implementations against vendored OTLP `.proto` files. On Jellyfin versions targeting net10 the SDK is viable again; the exporters live behind a clean interface seam, so an `OtelSdkExporter` is a single-file addition when that path is wanted.
+
+Jellyfin already exposes a number of `System.Diagnostics.Metrics.Meter` instruments internally. To pull those into Jellytel's export, extend `MeterCollector` to subscribe to additional meter names.
 
 ## Dependency hygiene (read before adding a NuGet)
 

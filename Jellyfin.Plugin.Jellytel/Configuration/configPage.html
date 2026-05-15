@@ -54,6 +54,20 @@
                         <div class="fieldDescription">Active sessions gauge, playback start/stop counters, playback duration histogram, and transcode reason counter. Driven by ISessionManager events.</div>
                     </div>
 
+                    <h2>Traces</h2>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableTraces" name="EnableTraces" type="checkbox" is="emby-checkbox" />
+                            <span>Enable trace export</span>
+                        </label>
+                        <div class="fieldDescription">Forwards Activity spans to the OTLP endpoint at /v1/traces. Trace IDs that already appear on exported log records (from Jellyfin's request pipeline) will resolve to real spans in the backend.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TracedActivitySources">Additional Activity sources</label>
+                        <input id="TracedActivitySources" name="TracedActivitySources" type="text" is="emby-input" />
+                        <div class="fieldDescription">Comma-separated list of ActivitySource names to capture, in addition to the plugin's own source. Example: <code>Microsoft.AspNetCore</code> to capture HTTP request spans. High-volume sources may produce a lot of spans; start with one and watch the <code>jellytel.traces.dropped</code> counter.</div>
+                    </div>
+
                     <h2>Local time-series buffer</h2>
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
@@ -101,6 +115,8 @@
                         document.querySelector('#BackfillBootLogs').checked = !!config.BackfillBootLogs;
                         document.querySelector('#EnableMetrics').checked = !!config.EnableMetrics;
                         document.querySelector('#EnableSessionMetrics').checked = !!config.EnableSessionMetrics;
+                        document.querySelector('#EnableTraces').checked = !!config.EnableTraces;
+                        document.querySelector('#TracedActivitySources').value = config.TracedActivitySources || '';
                         document.querySelector('#LocalBufferEnabled').checked = !!config.LocalBufferEnabled;
                         document.querySelector('#LocalBufferSampleIntervalSeconds').value = config.LocalBufferSampleIntervalSeconds || 30;
                         document.querySelector('#LocalBufferRetentionHours').value = config.LocalBufferRetentionHours || 168;
@@ -119,6 +135,8 @@
                     config.BackfillBootLogs = document.querySelector('#BackfillBootLogs').checked;
                     config.EnableMetrics = document.querySelector('#EnableMetrics').checked;
                     config.EnableSessionMetrics = document.querySelector('#EnableSessionMetrics').checked;
+                    config.EnableTraces = document.querySelector('#EnableTraces').checked;
+                    config.TracedActivitySources = document.querySelector('#TracedActivitySources').value;
                     config.LocalBufferEnabled = document.querySelector('#LocalBufferEnabled').checked;
                     config.LocalBufferSampleIntervalSeconds = parseInt(document.querySelector('#LocalBufferSampleIntervalSeconds').value, 10) || 30;
                     config.LocalBufferRetentionHours = parseInt(document.querySelector('#LocalBufferRetentionHours').value, 10) || 168;

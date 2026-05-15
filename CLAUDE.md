@@ -183,6 +183,29 @@ config changes. If you add a new bootstrapper, follow the same pattern in
 
 ---
 
+## Docs maintenance
+
+When you change behavior, update the docs in the same pass. The relevant
+files (this list is not exhaustive — grep for stale claims):
+
+- `README.md` — user-facing settings table, status banner, install/Aspire flow.
+- `docs/exporter-architecture.md` — pipeline shapes, vendored protos list.
+- `docs/local-buffer.md` — API surface, response shapes, retention.
+- `docs/DEVELOPING.md` — "(current)" sections describing how each subsystem
+  works today.
+
+**Rewrite, don't accrete.** Replace stale prose with the current truth in
+place. Do not write "we used to do X, now we do Y", "previously this was Z",
+or "as of the trace pipeline addition…" in the docs. The doc should read as
+if the current state has always been the case. Changelog entries belong in
+git commit messages, GitHub release notes, and `build.yaml` — not in
+reference docs that someone reads to learn how the system works *now*.
+
+A good test: if a reader who never saw the prior version of the doc would
+find a sentence confusing or unnecessary, delete it.
+
+---
+
 ## Repository layout cheatsheet
 
 ```
@@ -197,6 +220,11 @@ Jellyfin.Plugin.Jellytel/
     Panels/                  IMetricPanel implementations (SessionMetrics, …)
     JellytelMeter.cs         The shared Meter all panels create instruments on
     MetricsBootstrapper.cs   Wires collector + exporter + panels
+  Traces/
+    Export/                  IActivityCollector + ITraceExporter abstraction
+                             (ActivityCollector, OtlpHttpTraceExporter, NullTraceExporter)
+    JellytelActivitySource.cs  Shared ActivitySource for plugin-side spans
+    TracesBootstrapper.cs    Wires listener + exporter; CSV allowlist of sources
   Proto/                     Vendored OTLP .proto files (codegen at build time)
   Plugin.cs                  BasePlugin<PluginConfiguration>, IHasWebPages
   PluginServiceRegistrator.cs  DI registrations

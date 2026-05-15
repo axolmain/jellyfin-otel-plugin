@@ -16,9 +16,11 @@ public class PluginConfiguration : BasePluginConfiguration
         OtlpEndpoint = string.Empty;
         ServiceName = "jellyfin";
         BackfillBootLogs = false;
-        MinimumLevel = LogEventLevel.Debug;
-        EnableMetrics = false;
+        MinimumLevel = LogEventLevel.Warning;
+        EnableMetrics = true;
         EnableSessionMetrics = true;
+        EnableTraces = true;
+        TracedActivitySources = string.Empty;
         LocalBufferEnabled = false;
         LocalBufferSampleIntervalSeconds = 30;
         LocalBufferRetentionHours = 168;
@@ -64,6 +66,24 @@ public class PluginConfiguration : BasePluginConfiguration
     /// histogram, transcode reason counter) is enabled.
     /// </summary>
     public bool EnableSessionMetrics { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether OTLP trace export is enabled.
+    /// Master switch — when false, the trace listener is not attached and no
+    /// spans are collected regardless of <see cref="TracedActivitySources"/>.
+    /// </summary>
+    public bool EnableTraces { get; set; }
+
+    /// <summary>
+    /// Gets or sets a comma-separated list of additional <c>ActivitySource</c>
+    /// names to listen on, in addition to the plugin's own source. Example:
+    /// <c>Microsoft.AspNetCore</c> to capture Jellyfin's request activities so
+    /// trace IDs already attached to exported log records resolve to real
+    /// spans in the backend. High-volume sources may produce a lot of spans;
+    /// start with one source and watch the <c>jellytel.traces.dropped</c>
+    /// counter.
+    /// </summary>
+    public string TracedActivitySources { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the local SQLite time-series

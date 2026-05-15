@@ -2,6 +2,7 @@ using Jellyfin.Plugin.Jellytel.LocalBuffer;
 using Jellyfin.Plugin.Jellytel.Logs;
 using Jellyfin.Plugin.Jellytel.Metrics;
 using Jellyfin.Plugin.Jellytel.Metrics.Panels;
+using Jellyfin.Plugin.Jellytel.Traces;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddHostedService<LogsBootstrapper>();
         serviceCollection.AddHostedService<MetricsBootstrapper>();
+        serviceCollection.AddHostedService<TracesBootstrapper>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<LocalBufferBootstrapper>());
 
         serviceCollection.AddSingleton<IMetricPanel, SessionMetrics>();

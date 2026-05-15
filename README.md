@@ -2,7 +2,7 @@
 
 Bootstraps OpenTelemetry inside the Jellyfin process and exports metrics, traces, and logs to any OTLP-compatible backend (Grafana, Datadog, Honeycomb, an OTel Collector, etc.). Runs in-process — no sidecar, no scraping.
 
-> Status: **early**. The current release exports **logs** only via Serilog. Metrics, traces, and the playback/library signals described in the roadmap are not implemented yet.
+> Status: **early**. Logs (via Serilog), metrics (`jellyfin.*` session counters and `jellytel.buffer.*` self-instrumentation), and traces (any user-allowlisted `ActivitySource`, including Jellyfin's own request pipeline) all export over OTLP/HTTP. The richer playback/library signals in the roadmap are not implemented yet.
 
 ---
 
@@ -30,13 +30,19 @@ Compatible with **Jellyfin 10.11.x** (`targetAbi: 10.11.0.0`, `net9.0`).
 
 ## Configuration
 
-| Setting | Description |
-|---|---|
-| **OTLP Endpoint** | Base URL of an OTLP/HTTP collector (e.g. `http://localhost:4318`). Empty = export disabled. |
-| **Service Name** | Value reported as the `service.name` resource attribute. Defaults to `jellyfin`. |
-| **Backfill boot logs** | On startup, replays log events that occurred before the plugin loaded by re-parsing the current log file. Lossy on structured properties. |
+| Setting | Default | Description |
+|---|---|---|
+| **OTLP Endpoint** | *(empty)* | Base URL of an OTLP/HTTP collector (e.g. `http://localhost:4318`). Logs, metrics, and traces are all sent to this single base — `/v1/logs`, `/v1/metrics`, and `/v1/traces` are appended automatically. Empty = export disabled. |
+| **Service Name** | `jellyfin` | Value reported as the `service.name` resource attribute. |
+| **Minimum Log Level** | `Warning` | Floor for log events exported via OTLP. Jellyfin's normal console/file logging is unaffected. |
+| **Backfill boot logs** | off | On startup, replays log events that occurred before the plugin loaded by re-parsing the current log file. Lossy on structured properties. |
+| **Enable metrics** | on | Master switch for metric export. When off, no panels register. |
+| **Session metrics** | on | Active sessions gauge, playback start/stop counters, playback duration histogram, transcode-reason counter. |
+| **Enable traces** | on | Master switch for trace export. When off, no `ActivityListener` is attached. |
+| **Additional Activity sources** | *(empty)* | Comma-separated list of `ActivitySource` names to capture in addition to the plugin's own source. Example: `Microsoft.AspNetCore` to capture Jellyfin's request spans so trace IDs in exported logs resolve to real traces in the backend. High-volume sources may produce a lot of spans; watch `jellytel.traces.dropped`. |
+| **Local buffer** | off | Record metrics into a local SQLite ring buffer so recent history is viewable in the Jellytel dashboard sidebar even without an OTLP collector. Independent of OTLP export. |
 
-Endpoint changes apply on save — no restart required.
+Defaults are tuned to "on but idle": metrics and traces are collected from the moment the plugin loads, but with no OTLP endpoint set, nothing is sent. Setting the endpoint and saving is the only action needed to start exporting — no restart required, all three pipelines pick up the change on save.
 
 ---
 
@@ -57,8 +63,9 @@ Then in **Plugins → Jellytel**:
 | Setting | Value |
 |---|---|
 | **OTLP Endpoint** | `http://localhost:4318` (same host as Jellyfin) — or `http://host.docker.internal:4318` if Jellyfin runs in Docker |
+| **Additional Activity sources** | `Microsoft.AspNetCore` *(optional)* — captures Jellyfin's HTTP request spans so trace IDs that the Serilog OTLP sink stamps onto log records resolve to real traces in Aspire instead of 404-ing |
 
-Grab the one-time login URL with `docker logs aspire-dashboard | grep login`, open it, and `jellyfin.*` + `jellytel.buffer.*` metrics should start showing up within a few seconds.
+Grab the one-time login URL with `docker logs aspire-dashboard | grep login`, open it, and `jellyfin.*` metrics + `jellytel.buffer.*` self-instrumentation should start showing up within a few seconds. Traces appear under the Traces tab once activity has time to flow through the 15s export cadence.
 
 The dev-test script (see below) wires this up automatically — start/reload spins the dashboard, patches the plugin's OTLP endpoint, and prints the login URL.
 
