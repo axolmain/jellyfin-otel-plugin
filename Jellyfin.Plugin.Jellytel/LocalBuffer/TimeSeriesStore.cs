@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Jellytel.Metrics;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
@@ -38,6 +41,51 @@ public sealed class TimeSeriesStore : IAsyncDisposable
             ON metric_samples (metric_name, ts);
         """;
 
+    private static readonly Counter<long> WritesEnqueued = JellytelMeter.Instance.CreateCounter<long>(
+        "jellytel.buffer.writes.enqueued",
+        unit: "{sample}",
+        description: "Samples accepted by the local buffer's write channel.");
+
+    private static readonly Counter<long> WritesDropped = JellytelMeter.Instance.CreateCounter<long>(
+        "jellytel.buffer.writes.dropped",
+        unit: "{sample}",
+        description: "Samples rejected by the local buffer's write channel (channel closed or full).");
+
+    private static readonly Counter<long> FlushBatches = JellytelMeter.Instance.CreateCounter<long>(
+        "jellytel.buffer.flush.batches",
+        unit: "{batch}",
+        description: "SQLite flush batches committed by the background writer.");
+
+    private static readonly Histogram<double> FlushDurationMs = JellytelMeter.Instance.CreateHistogram<double>(
+        "jellytel.buffer.flush.duration",
+        unit: "ms",
+        description: "Wall-clock duration of a single SQLite flush batch (open → commit).");
+
+    private static readonly Histogram<long> FlushBatchSize = JellytelMeter.Instance.CreateHistogram<long>(
+        "jellytel.buffer.flush.batch_size",
+        unit: "{sample}",
+        description: "Number of samples per flushed batch.");
+
+    private static readonly Histogram<double> RetentionDurationMs = JellytelMeter.Instance.CreateHistogram<double>(
+        "jellytel.buffer.retention.duration",
+        unit: "ms",
+        description: "Wall-clock duration of an opportunistic retention pass.");
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1823:Avoid unused private fields",
+        Justification = "Field exists to keep the ObservableGauge registered on the Meter; the SDK pulls values via its callback.")]
+    private static readonly ObservableGauge<int> ChannelDepth = JellytelMeter.Instance.CreateObservableGauge<int>(
+        "jellytel.buffer.channel.depth",
+        observeValue: ObserveChannelDepth,
+        unit: "{sample}",
+        description: "Backlog of samples queued for the SQLite writer.");
+
+    // Tracks the active store so the static channel-depth gauge can read it.
+    // The store is recreated on config change; only the most recently constructed
+    // instance is observed. Earlier instances clear this field on dispose.
+    private static TimeSeriesStore? _current;
+
     private readonly string _connectionString;
     private readonly ILogger<TimeSeriesStore> _logger;
     private readonly Channel<MetricSample> _writes;
@@ -47,6 +95,7 @@ public sealed class TimeSeriesStore : IAsyncDisposable
     private int _writesSinceRetention;
     private int _retentionHours;
     private int _maxRows;
+    private int _channelDepth;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TimeSeriesStore"/> class
@@ -82,6 +131,8 @@ public sealed class TimeSeriesStore : IAsyncDisposable
         });
 
         _writerTask = Task.Run(() => WriterLoopAsync(_shutdown.Token));
+
+        Interlocked.Exchange(ref _current, this);
     }
 
     /// <summary>
@@ -102,8 +153,14 @@ public sealed class TimeSeriesStore : IAsyncDisposable
     /// <param name="sample">Sample to record.</param>
     public void Write(MetricSample sample)
     {
-        if (!_writes.Writer.TryWrite(sample))
+        if (_writes.Writer.TryWrite(sample))
         {
+            Interlocked.Increment(ref _channelDepth);
+            WritesEnqueued.Add(1);
+        }
+        else
+        {
+            WritesDropped.Add(1);
             _logger.LogWarning("Jellytel buffer: write channel rejected sample {Metric}", sample.MetricName);
         }
     }
@@ -197,6 +254,8 @@ public sealed class TimeSeriesStore : IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        Interlocked.CompareExchange(ref _current, null, this);
+
         _writes.Writer.TryComplete();
         await _shutdown.CancelAsync().ConfigureAwait(false);
         try
@@ -214,6 +273,17 @@ public sealed class TimeSeriesStore : IAsyncDisposable
 
         _shutdown.Dispose();
         SqliteConnection.ClearAllPools();
+    }
+
+    // Channel<T>.Reader.Count throws NotSupportedException on unbounded
+    // channels, so we keep our own depth counter: incremented on successful
+    // TryWrite, decremented when the writer loop drains a batch. Volatile
+    // read is sufficient — we accept a brief skew vs. the writer drain
+    // because this is an observability signal, not a control input.
+    private static int ObserveChannelDepth()
+    {
+        var store = _current;
+        return store is null ? 0 : Volatile.Read(ref store._channelDepth);
     }
 
     private void InitializeSchema()
@@ -245,6 +315,8 @@ public sealed class TimeSeriesStore : IAsyncDisposable
                 continue;
             }
 
+            Interlocked.Add(ref _channelDepth, -batch.Count);
+
             try
             {
                 FlushBatch(batch);
@@ -258,6 +330,8 @@ public sealed class TimeSeriesStore : IAsyncDisposable
 
     private void FlushBatch(List<MetricSample> batch)
     {
+        var start = Stopwatch.GetTimestamp();
+
         using var conn = new SqliteConnection(_connectionString);
         conn.Open();
         using var tx = conn.BeginTransaction();
@@ -282,6 +356,10 @@ public sealed class TimeSeriesStore : IAsyncDisposable
 
         tx.Commit();
 
+        FlushBatches.Add(1);
+        FlushBatchSize.Record(batch.Count);
+        FlushDurationMs.Record(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+
         var since = Interlocked.Add(ref _writesSinceRetention, batch.Count);
         if (since >= 1000)
         {
@@ -298,6 +376,19 @@ public sealed class TimeSeriesStore : IAsyncDisposable
     }
 
     private void EnforceRetention()
+    {
+        var start = Stopwatch.GetTimestamp();
+        try
+        {
+            EnforceRetentionCore();
+        }
+        finally
+        {
+            RetentionDurationMs.Record(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        }
+    }
+
+    private void EnforceRetentionCore()
     {
         var retentionHours = Volatile.Read(ref _retentionHours);
         var maxRows = Volatile.Read(ref _maxRows);

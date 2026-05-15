@@ -40,6 +40,30 @@ Endpoint changes apply on save — no restart required.
 
 ---
 
+## Quick OTel backend: Aspire dashboard
+
+Don't have an OTel collector set up? The .NET Aspire **standalone dashboard** is the easiest way to see what Jellytel is emitting — both during plugin development and against a real Jellyfin install. It's a single container with a UI for metrics, logs, and traces, and it speaks OTLP out of the box.
+
+```bash
+docker run -d --rm --name aspire-dashboard \
+  -p 18888:18888 \
+  -p 4317:18889 \
+  -p 4318:18890 \
+  mcr.microsoft.com/dotnet/aspire-dashboard:latest
+```
+
+Then in **Plugins → Jellytel**:
+
+| Setting | Value |
+|---|---|
+| **OTLP Endpoint** | `http://localhost:4318` (same host as Jellyfin) — or `http://host.docker.internal:4318` if Jellyfin runs in Docker |
+
+Grab the one-time login URL with `docker logs aspire-dashboard | grep login`, open it, and `jellyfin.*` + `jellytel.buffer.*` metrics should start showing up within a few seconds.
+
+The dev-test script (see below) wires this up automatically — start/reload spins the dashboard, patches the plugin's OTLP endpoint, and prints the login URL.
+
+---
+
 ## Roadmap
 
 ### Phase 1 — Bitrate & encoding visibility *(planned)*

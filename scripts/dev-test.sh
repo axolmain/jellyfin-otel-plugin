@@ -12,6 +12,9 @@
 #        scripts/dev-test.sh logs
 #        scripts/dev-test.sh stop
 #        scripts/dev-test.sh teardown
+#        scripts/dev-test.sh aspire-up        (start the Aspire dashboard alone)
+#        scripts/dev-test.sh aspire-down
+#        scripts/dev-test.sh open-aspire
 #
 # Notes on what / why:
 #   • State lives under $HOME/jellytel-dev/ (Docker Desktop shares $HOME by
@@ -21,6 +24,10 @@
 #   • Verify-on-start parses container logs for "Loaded plugin: Jellytel" and
 #     surfaces per-subsystem (logs / metrics / local buffer) state so a load
 #     regression is obvious without grepping by hand.
+#   • Aspire standalone dashboard is auto-started on start/reload. Jellyfin
+#     points OTLP/HTTP at http://host.docker.internal:4318 (the host-side
+#     mapping of Aspire's container port 18890). On Linux this requires
+#     --add-host=host.docker.internal:host-gateway on the Jellyfin run.
 #   • Dev container default admin: root / admin (set during onboarding,
 #     persisted under config/).
 #
@@ -43,6 +50,23 @@ CACHE_DIR="$DEV_ROOT/cache"
 MEDIA_DIR="$DEV_ROOT/media"
 PUBLISH_DIR="$DEV_ROOT/publish"
 PLUGIN_DIR="$CONFIG_DIR/plugins/${PLUGIN_DIR_NAME}_${PLUGIN_VERSION}"
+
+# Aspire standalone dashboard. We auto-spin it on start/reload and point the
+# plugin's OTLP endpoint at it via host.docker.internal so the Jellyfin
+# container can reach it without a shared network. Ports:
+#   18888 → dashboard UI
+#   4317  → OTLP/gRPC (mapped from container 18889)
+#   4318  → OTLP/HTTP (mapped from container 18890) — this is what we use
+ASPIRE_IMAGE="${JELLYTEL_ASPIRE_IMAGE:-mcr.microsoft.com/dotnet/aspire-dashboard:latest}"
+ASPIRE_CONTAINER="${JELLYTEL_ASPIRE_CONTAINER:-aspire-dashboard}"
+ASPIRE_UI_PORT="${JELLYTEL_ASPIRE_UI_PORT:-18888}"
+ASPIRE_OTLP_GRPC_PORT="${JELLYTEL_ASPIRE_OTLP_GRPC_PORT:-4317}"
+ASPIRE_OTLP_HTTP_PORT="${JELLYTEL_ASPIRE_OTLP_HTTP_PORT:-4318}"
+# Endpoint the Jellytel plugin (inside the Jellyfin container) writes into
+# its config. host.docker.internal resolves to the Docker Desktop host alias
+# on macOS/Windows. On Linux this requires --add-host=host.docker.internal:host-gateway.
+OTLP_ENDPOINT_FROM_JELLYFIN="${JELLYTEL_OTLP_ENDPOINT:-http://host.docker.internal:${ASPIRE_OTLP_HTTP_PORT}}"
+PLUGIN_CONFIG_FILE="$CONFIG_DIR/plugins/configurations/Jellyfin.Plugin.Jellytel.xml"
 
 # DLLs the CI workflow ships (mirror Package zip step in publish.yaml).
 PLUGIN_DLLS=(
@@ -107,6 +131,79 @@ action_build() {
     ls "$PLUGIN_DIR" | sed 's/^/    /'
 }
 
+action_aspire_up() {
+    require docker
+    if docker ps --format '{{.Names}}' | grep -qx "$ASPIRE_CONTAINER"; then
+        ok "Aspire dashboard already running: http://localhost:$ASPIRE_UI_PORT"
+        print_aspire_login_url
+        return 0
+    fi
+    # If it exists but is stopped, remove so the run flags below take effect cleanly.
+    if docker ps -a --format '{{.Names}}' | grep -qx "$ASPIRE_CONTAINER"; then
+        docker rm -f "$ASPIRE_CONTAINER" > /dev/null
+    fi
+    say "Starting Aspire dashboard ($ASPIRE_IMAGE)"
+    docker run -d --rm \
+        --name "$ASPIRE_CONTAINER" \
+        -p "$ASPIRE_UI_PORT:18888" \
+        -p "$ASPIRE_OTLP_GRPC_PORT:18889" \
+        -p "$ASPIRE_OTLP_HTTP_PORT:18890" \
+        "$ASPIRE_IMAGE" > /dev/null
+    ok "Aspire up: http://localhost:$ASPIRE_UI_PORT  (OTLP/HTTP :$ASPIRE_OTLP_HTTP_PORT)"
+    print_aspire_login_url
+}
+
+# Polls aspire's logs for its one-time login URL and echoes it. The URL line
+# is emitted within ~1s of startup; we give it 5s before falling back.
+# Format from Aspire: "Login to the dashboard at http://localhost:18888/login?t=<hex>"
+print_aspire_login_url() {
+    local i url
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        url=$(docker logs "$ASPIRE_CONTAINER" 2>&1 | grep -oE 'http://localhost:[0-9]+/login\?t=[a-f0-9]+' | tail -1 || true)
+        if [[ -n "$url" ]]; then
+            ok "Login: $url"
+            return 0
+        fi
+        sleep 0.5
+    done
+    dim "    Login URL not yet in logs. Try: docker logs $ASPIRE_CONTAINER | grep login"
+}
+
+action_aspire_down() {
+    require docker
+    if docker ps -a --format '{{.Names}}' | grep -qx "$ASPIRE_CONTAINER"; then
+        docker rm -f "$ASPIRE_CONTAINER" > /dev/null
+        ok "Aspire dashboard removed"
+    else
+        dim "Aspire dashboard not running"
+    fi
+}
+
+# Idempotently sets <OtlpEndpoint> in the plugin's persisted XML config so
+# the plugin emits to Aspire from boot. Safe to call before the file exists
+# (Jellyfin will overwrite with defaults on first plugin load); we only
+# patch when the file is present.
+set_otlp_endpoint() {
+    local endpoint="$1"
+    if [[ ! -f "$PLUGIN_CONFIG_FILE" ]]; then
+        dim "    Plugin config not yet written ($PLUGIN_CONFIG_FILE); Jellyfin will create it on first boot — re-run 'reload' or set it via the UI."
+        return 0
+    fi
+    # Replace either <OtlpEndpoint /> or <OtlpEndpoint>...</OtlpEndpoint>.
+    # Portable sed: write to a temp and move into place. Avoids BSD/GNU -i differences.
+    local tmp
+    tmp=$(mktemp)
+    awk -v ep="$endpoint" '
+        /<OtlpEndpoint *\/>/        { print "  <OtlpEndpoint>" ep "</OtlpEndpoint>"; next }
+        /<OtlpEndpoint>.*<\/OtlpEndpoint>/ {
+            sub(/<OtlpEndpoint>[^<]*<\/OtlpEndpoint>/, "<OtlpEndpoint>" ep "</OtlpEndpoint>")
+            print; next
+        }
+        { print }
+    ' "$PLUGIN_CONFIG_FILE" > "$tmp" && mv "$tmp" "$PLUGIN_CONFIG_FILE"
+    ok "OTLP endpoint set → $endpoint"
+}
+
 action_start() {
     require docker
     mkdir -p "$CONFIG_DIR" "$CACHE_DIR" "$MEDIA_DIR"
@@ -115,6 +212,9 @@ action_start() {
         warn "Container $CONTAINER already exists. Use 'restart' or 'teardown' first."
         return 1
     fi
+
+    action_aspire_up
+    set_otlp_endpoint "$OTLP_ENDPOINT_FROM_JELLYFIN"
 
     say "Starting Jellyfin ($JELLYFIN_IMAGE) on :$PORT"
     docker run -d \
@@ -211,6 +311,14 @@ action_reload() {
 
 action_status() {
     require docker
+    say "─── Aspire dashboard ───"
+    if docker ps --format '{{.Names}}' | grep -qx "$ASPIRE_CONTAINER"; then
+        ok "Running: http://localhost:$ASPIRE_UI_PORT  (OTLP/HTTP :$ASPIRE_OTLP_HTTP_PORT)"
+        print_aspire_login_url
+    else
+        dim "    Not running. (Started automatically on next 'start' or 'reload'.)"
+    fi
+
     say "─── Container ───"
     if docker ps --format '{{.Names}}\t{{.Status}}' | grep -E "^${CONTAINER}\b" || true; then
         :
@@ -272,6 +380,14 @@ action_open() {
     fi
 }
 
+action_open_aspire() {
+    if command -v open > /dev/null 2>&1; then
+        open "http://localhost:$ASPIRE_UI_PORT"
+    else
+        echo "http://localhost:$ASPIRE_UI_PORT"
+    fi
+}
+
 action_video() {
     mkdir -p "$MEDIA_DIR"
     if [[ -f "$TEST_VIDEO_FILE" ]]; then
@@ -306,6 +422,7 @@ action_teardown() {
     if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER"; then
         action_remove_container
     fi
+    action_aspire_down
     say "Removing $DEV_ROOT"
     rm -rf "$DEV_ROOT"
     ok "Full teardown done"
@@ -329,10 +446,13 @@ menu() {
         echo "  6) Status"
         echo "  7) Tail logs (filtered to Jellytel)"
         echo "  8) Tail ALL logs"
-        echo "  9) Open in browser"
-        echo " 10) Drop test video into media/"
-        echo " 11) Reset Jellyfin config (keep dev root)"
-        echo " 12) Teardown everything"
+        echo "  9) Open Jellyfin in browser"
+        echo " 10) Open Aspire dashboard in browser"
+        echo " 11) Drop test video into media/"
+        echo " 12) Start Aspire dashboard"
+        echo " 13) Stop Aspire dashboard"
+        echo " 14) Reset Jellyfin config (keep dev root)"
+        echo " 15) Teardown everything (incl. Aspire)"
         echo "  q) Quit"
         echo
         read -rp "  > " choice
@@ -346,9 +466,12 @@ menu() {
             7)  action_logs ;;
             8)  action_logs_all ;;
             9)  action_open ;;
-            10) action_video ;;
-            11) action_reset_jellyfin ;;
-            12) action_teardown ;;
+            10) action_open_aspire ;;
+            11) action_video ;;
+            12) action_aspire_up ;;
+            13) action_aspire_down ;;
+            14) action_reset_jellyfin ;;
+            15) action_teardown ;;
             q|Q) exit 0 ;;
             *)  warn "Unknown choice: $choice" ;;
         esac
@@ -370,6 +493,9 @@ else
         logs)          action_logs ;;
         logs-all)      action_logs_all ;;
         open)          action_open ;;
+        open-aspire)   action_open_aspire ;;
+        aspire-up)     action_aspire_up ;;
+        aspire-down)   action_aspire_down ;;
         video)         action_video ;;
         reset)         action_reset_jellyfin ;;
         teardown)      action_teardown ;;
