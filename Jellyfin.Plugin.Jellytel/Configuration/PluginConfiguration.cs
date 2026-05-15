@@ -19,6 +19,8 @@ public class PluginConfiguration : BasePluginConfiguration
         MinimumLevel = LogEventLevel.Warning;
         EnableMetrics = true;
         EnableSessionMetrics = true;
+        EnableTranscodeEvents = true;
+        StaleSessionSeconds = 90;
         EnableTraces = true;
         TracedActivitySources = string.Empty;
         LocalBufferEnabled = false;
@@ -63,9 +65,28 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets a value indicating whether the session metrics panel
     /// (active sessions, playback start/stop counters, playback duration
-    /// histogram, transcode reason counter) is enabled.
+    /// histogram, native-bitrate histogram, aggregate outbound bitrate gauge)
+    /// is enabled.
     /// </summary>
     public bool EnableSessionMetrics { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the transcode events panel
+    /// (transcode reasons counter, encode/source fps and speed-ratio
+    /// histograms, transcoded-bitrate histogram, structured transcode_started
+    /// and transcode_stopped log lines) is enabled.
+    /// </summary>
+    public bool EnableTranscodeEvents { get; set; }
+
+    /// <summary>
+    /// Gets or sets the staleness threshold for active-session gauges. A
+    /// session whose <c>LastPlaybackCheckIn</c> is older than this is excluded
+    /// from <c>jellyfin.sessions.active</c> and <c>jellyfin.playback.bitrate.total</c>
+    /// so network-dropped sessions don't show as live indefinitely. Jellyfin's
+    /// built-in reaper only catches paused sessions; counters and stop-logs
+    /// still rely on the host's <c>PlaybackStopped</c> event.
+    /// </summary>
+    public int StaleSessionSeconds { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether OTLP trace export is enabled.

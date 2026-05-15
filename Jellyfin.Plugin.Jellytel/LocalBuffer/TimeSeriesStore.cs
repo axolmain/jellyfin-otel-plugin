@@ -197,20 +197,67 @@ public sealed class TimeSeriesStore : IAsyncDisposable
     }
 
     /// <summary>
+    /// Reads the most recent value for each <c>tag_key</c> of a single
+    /// tagged-sum metric (e.g. <c>jellyfin.sessions.active</c>). Used by the
+    /// snapshot endpoint to sum across play_method buckets while keeping the
+    /// per-bucket breakdown available for the dashboard.
+    /// </summary>
+    /// <param name="metricName">Metric to look up.</param>
+    /// <returns>Map of tag_key → (latest ts, latest value). Empty when no samples.</returns>
+    public IReadOnlyDictionary<string, (long TimestampMs, double Value)> ReadLatestByTag(string metricName)
+    {
+        var result = new Dictionary<string, (long, double)>(StringComparer.Ordinal);
+
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+
+        // Most-recent row per tag_key. Correlated subquery is fine here —
+        // tag_key cardinality is small (4 play_method buckets) and the
+        // ix_metric_samples_metric_ts index covers the lookup.
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT tag_key, ts, value
+            FROM metric_samples AS m
+            WHERE metric_name = $m
+              AND ts = (
+                  SELECT MAX(ts) FROM metric_samples
+                  WHERE metric_name = $m AND tag_key = m.tag_key
+              )
+            GROUP BY tag_key
+            """;
+        cmd.Parameters.AddWithValue("$m", metricName);
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            result[reader.GetString(0)] = (reader.GetInt64(1), reader.GetDouble(2));
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Reads bucketed series data for a single metric over a time range.
-    /// Buckets are SUM-aggregated for counters and AVG-aggregated for gauges;
-    /// the caller picks via <paramref name="aggregation"/>.
+    /// Aggregation modes:
+    /// <list type="bullet">
+    ///   <item><c>sum</c> — sum within each bucket (counters).</item>
+    ///   <item><c>avg</c> — average within each bucket (gauges, histograms).</item>
+    ///   <item><c>sum_of_avg_by_tag</c> — average per <c>tag_key</c> within
+    ///   each bucket, then sum across tags. Correct semantics for tagged
+    ///   gauges where each tag is sampled multiple times per bucket and the
+    ///   dashboard wants the total across tags.</item>
+    /// </list>
     /// </summary>
     /// <param name="metricName">Metric to read.</param>
     /// <param name="fromMs">Start (inclusive) unix ms.</param>
     /// <param name="toMs">End (inclusive) unix ms.</param>
     /// <param name="bucketMs">Bucket width in ms. Must be &gt; 0.</param>
-    /// <param name="aggregation">"sum" or "avg".</param>
+    /// <param name="aggregation">"sum", "avg", or "sum_of_avg_by_tag".</param>
     /// <returns>Ordered list of <c>(bucketStartMs, aggregatedValue)</c>.</returns>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Security",
         "CA2100:Review SQL queries for security vulnerabilities",
-        Justification = "Aggregation function selected from an internal allowlist (SUM/AVG); all user inputs are bound parameters.")]
+        Justification = "Aggregation function selected from an internal allowlist; all user inputs are bound parameters.")]
     public IReadOnlyList<(long TimestampMs, double Value)> ReadSeries(
         string metricName,
         long fromMs,
@@ -220,22 +267,40 @@ public sealed class TimeSeriesStore : IAsyncDisposable
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bucketMs);
 
-        var agg = aggregation.Equals("avg", StringComparison.OrdinalIgnoreCase) ? "AVG(value)" : "SUM(value)";
-
         using var conn = new SqliteConnection(_connectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = string.Format(
-            CultureInfo.InvariantCulture,
-            """
-            SELECT (ts / $b) * $b AS bucket, {0} AS v
-            FROM metric_samples
-            WHERE metric_name = $m AND ts >= $from AND ts <= $to
-            GROUP BY bucket
-            ORDER BY bucket
-            """,
-            agg);
+
+        if (aggregation.Equals("sum_of_avg_by_tag", StringComparison.OrdinalIgnoreCase))
+        {
+            cmd.CommandText = """
+                SELECT bucket, SUM(v) AS total
+                FROM (
+                    SELECT (ts / $b) * $b AS bucket, tag_key, AVG(value) AS v
+                    FROM metric_samples
+                    WHERE metric_name = $m AND ts >= $from AND ts <= $to
+                    GROUP BY bucket, tag_key
+                )
+                GROUP BY bucket
+                ORDER BY bucket
+                """;
+        }
+        else
+        {
+            var agg = aggregation.Equals("avg", StringComparison.OrdinalIgnoreCase) ? "AVG(value)" : "SUM(value)";
+            cmd.CommandText = string.Format(
+                CultureInfo.InvariantCulture,
+                """
+                SELECT (ts / $b) * $b AS bucket, {0} AS v
+                FROM metric_samples
+                WHERE metric_name = $m AND ts >= $from AND ts <= $to
+                GROUP BY bucket
+                ORDER BY bucket
+                """,
+                agg);
+        }
+
         cmd.Parameters.AddWithValue("$m", metricName);
         cmd.Parameters.AddWithValue("$from", fromMs);
         cmd.Parameters.AddWithValue("$to", toMs);

@@ -84,6 +84,28 @@
             padding: 1.5em 0;
             text-align: center;
         }
+        #JellytelDashboardPage .jt-card .jt-note {
+            margin-top: 0.5em;
+            opacity: 0.55;
+            font-size: 0.75em;
+            line-height: 1.3;
+        }
+        #JellytelDashboardPage .jt-card .jt-breakdown {
+            margin-top: 0.4em;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6em;
+            font-size: 0.78em;
+            opacity: 0.75;
+        }
+        #JellytelDashboardPage .jt-card .jt-breakdown .jt-bucket strong {
+            font-weight: 500;
+            color: #00a4dc;
+            margin-right: 0.25em;
+        }
+        #JellytelDashboardPage .jt-card .jt-breakdown .jt-bucket.zero {
+            opacity: 0.4;
+        }
     </style>
 
     <div data-role="content">
@@ -104,12 +126,31 @@
 
     <script type="text/javascript">
     (function () {
+        function fmtBitrate(v) {
+            if (!isFinite(v) || v <= 0) return '—';
+            if (v >= 1e9) return (v / 1e9).toFixed(2) + ' Gb/s';
+            if (v >= 1e6) return (v / 1e6).toFixed(1) + ' Mb/s';
+            if (v >= 1e3) return (v / 1e3).toFixed(0) + ' kb/s';
+            return Math.round(v) + ' b/s';
+        }
+        function fmtFps(v) { return isFinite(v) && v > 0 ? v.toFixed(1) + ' fps' : '—'; }
+        function fmtRatio(v) { return isFinite(v) ? v.toFixed(2) + 'x' : '—'; }
+
         var METRICS = [
-            { name: 'jellyfin.sessions.active',    label: 'Active sessions',    format: function (v) { return Math.round(v); } },
-            { name: 'jellyfin.playback.started',   label: 'Playback starts',    format: function (v) { return Math.round(v); } },
-            { name: 'jellyfin.playback.stopped',   label: 'Playback stops',     format: function (v) { return Math.round(v); } },
-            { name: 'jellyfin.playback.duration',  label: 'Playback duration',  format: function (v) { return (v / 60).toFixed(1) + ' min'; } },
-            { name: 'jellyfin.transcode.reasons',  label: 'Transcode reasons',  format: function (v) { return Math.round(v); } }
+            { name: 'jellyfin.sessions.active',                label: 'Active sessions',         format: function (v) { return Math.round(v); } },
+            { name: 'jellyfin.playback.bitrate.total',         label: 'Outbound bitrate (sum)',  format: fmtBitrate },
+            { name: 'jellyfin.playback.bitrate.native',        label: 'Native bitrate (sample)', format: fmtBitrate },
+            { name: 'jellyfin.playback.bitrate.transcoded',    label: 'Transcoded bitrate',      format: fmtBitrate },
+            { name: 'jellyfin.transcode.encode_fps',           label: 'Encode fps',              format: fmtFps,
+              note: 'ffmpeg output frame rate.' },
+            { name: 'jellyfin.transcode.source_fps',           label: 'Source fps',              format: fmtFps,
+              note: 'Source media frame rate. Blank when unresolvable (e.g. VFR content).' },
+            { name: 'jellyfin.transcode.encode_speed_ratio',   label: 'Encode-speed ratio',      format: fmtRatio,
+              note: '>1× = faster than realtime. <1× = falling behind.' },
+            { name: 'jellyfin.playback.started',               label: 'Playback starts',         format: function (v) { return Math.round(v); } },
+            { name: 'jellyfin.playback.stopped',               label: 'Playback stops',          format: function (v) { return Math.round(v); } },
+            { name: 'jellyfin.playback.duration',              label: 'Playback duration',       format: function (v) { return (v / 60).toFixed(1) + ' min'; } },
+            { name: 'jellyfin.transcode.reasons',              label: 'Transcode reasons',       format: function (v) { return Math.round(v); } }
         ];
 
         var rangeHours = 24;
@@ -155,11 +196,36 @@
             var card = document.createElement('div');
             card.className = 'jt-card';
             card.setAttribute('data-metric', m.name);
+            var noteHtml = m.note ? '<div class="jt-note">' + m.note + '</div>' : '';
             card.innerHTML =
                 '<h3>' + m.label + '</h3>' +
                 '<div class="jt-value" data-value>—</div>' +
-                '<canvas class="jt-chart" data-chart width="320" height="60"></canvas>';
+                '<canvas class="jt-chart" data-chart width="320" height="60"></canvas>' +
+                '<div class="jt-breakdown" data-breakdown hidden></div>' +
+                noteHtml;
             return card;
+        }
+
+        function renderBreakdown(card, breakdown, formatter) {
+            var el = card.querySelector('[data-breakdown]');
+            if (!el) return;
+            if (!breakdown) {
+                el.hidden = true;
+                el.innerHTML = '';
+                return;
+            }
+            var keys = Object.keys(breakdown).sort();
+            if (keys.length === 0) {
+                el.hidden = true;
+                el.innerHTML = '';
+                return;
+            }
+            el.hidden = false;
+            el.innerHTML = keys.map(function (k) {
+                var v = breakdown[k];
+                var cls = (!isFinite(v) || v === 0) ? 'jt-bucket zero' : 'jt-bucket';
+                return '<span class="' + cls + '"><strong>' + k + '</strong>' + formatter(v) + '</span>';
+            }).join('');
         }
 
         function drawSparkline(canvas, points) {
@@ -239,6 +305,7 @@
                     if (!card) return;
                     var s = byName[m.name];
                     card.querySelector('[data-value]').textContent = s ? m.format(s.Value) : '—';
+                    renderBreakdown(card, s ? s.Breakdown : null, m.format);
                 });
                 return true;
             }).catch(function (err) {

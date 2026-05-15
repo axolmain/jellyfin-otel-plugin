@@ -26,5 +26,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<LocalBufferBootstrapper>());
 
         serviceCollection.AddSingleton<IMetricPanel, SessionMetrics>();
+        serviceCollection.AddSingleton<IMetricPanel, TranscodeEvents>();
     }
 }

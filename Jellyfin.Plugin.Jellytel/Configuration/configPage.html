@@ -51,7 +51,19 @@
                             <input id="EnableSessionMetrics" name="EnableSessionMetrics" type="checkbox" is="emby-checkbox" />
                             <span>Session metrics</span>
                         </label>
-                        <div class="fieldDescription">Active sessions gauge, playback start/stop counters, playback duration histogram, and transcode reason counter. Driven by ISessionManager events.</div>
+                        <div class="fieldDescription">Active sessions gauge (split by play method), playback start/stop counters, playback duration histogram, native-bitrate histogram, and aggregate outbound bitrate gauge. Driven by ISessionManager events.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableTranscodeEvents" name="EnableTranscodeEvents" type="checkbox" is="emby-checkbox" />
+                            <span>Transcode events</span>
+                        </label>
+                        <div class="fieldDescription">Transcode reasons counter, encode/source fps and speed-ratio histograms, transcoded-bitrate histogram, and structured transcode_started / transcode_stopped log lines. Off if no transcoding is happening; cheap to leave on.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="StaleSessionSeconds">Stale session threshold (seconds)</label>
+                        <input id="StaleSessionSeconds" name="StaleSessionSeconds" type="number" min="15" is="emby-input" />
+                        <div class="fieldDescription">A session whose <code>LastPlaybackCheckIn</code> is older than this is excluded from the active-sessions and aggregate-bitrate gauges. Counts toward "no longer playing" even though Jellyfin's reaper only catches paused sessions. Default 90s (~30 missed progress ticks at 3s cadence).</div>
                     </div>
 
                     <h2>Traces</h2>
@@ -115,6 +127,8 @@
                         document.querySelector('#BackfillBootLogs').checked = !!config.BackfillBootLogs;
                         document.querySelector('#EnableMetrics').checked = !!config.EnableMetrics;
                         document.querySelector('#EnableSessionMetrics').checked = !!config.EnableSessionMetrics;
+                        document.querySelector('#EnableTranscodeEvents').checked = config.EnableTranscodeEvents !== false;
+                        document.querySelector('#StaleSessionSeconds').value = config.StaleSessionSeconds || 90;
                         document.querySelector('#EnableTraces').checked = !!config.EnableTraces;
                         document.querySelector('#TracedActivitySources').value = config.TracedActivitySources || '';
                         document.querySelector('#LocalBufferEnabled').checked = !!config.LocalBufferEnabled;
@@ -135,6 +149,8 @@
                     config.BackfillBootLogs = document.querySelector('#BackfillBootLogs').checked;
                     config.EnableMetrics = document.querySelector('#EnableMetrics').checked;
                     config.EnableSessionMetrics = document.querySelector('#EnableSessionMetrics').checked;
+                    config.EnableTranscodeEvents = document.querySelector('#EnableTranscodeEvents').checked;
+                    config.StaleSessionSeconds = parseInt(document.querySelector('#StaleSessionSeconds').value, 10) || 90;
                     config.EnableTraces = document.querySelector('#EnableTraces').checked;
                     config.TracedActivitySources = document.querySelector('#TracedActivitySources').value;
                     config.LocalBufferEnabled = document.querySelector('#LocalBufferEnabled').checked;
