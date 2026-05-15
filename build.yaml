@@ -1,7 +1,7 @@
 ---
 name: "Jellytel"
 guid: "f7a99fe2-4dd9-4a55-8d6d-4e02914c54f6"
-version: "1.0.1.2"
+version: "1.0.1.3"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "OpenTelemetry log exporter for Jellyfin"
@@ -15,7 +15,4 @@ owner: "axolmain"
 artifacts:
 - "Jellyfin.Plugin.Jellytel.dll"
 changelog: |
-  - Bundle System.Diagnostics.DiagnosticSource.dll. The OpenTelemetry SDK
-    1.15.3 binaries reference DiagnosticSource 10.0.0, which net9-bundled
-    Jellyfin server distributions don't ship; 1.0.1.1 hit a
-    FileNotFoundException on plugin load as a result.
+  - Maintenance release. See GitHub release notes for details.
