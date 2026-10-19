@@ -73,14 +73,18 @@ The dev-test script (see below) wires this up automatically — start/reload spi
 
 ## Roadmap
 
-### Phase 1 — Bitrate & encoding visibility *(planned)*
-Active streams by play method, per-session bitrate, aggregate outbound rate, transcode count by reason, ffmpeg encode-speed ratio. Stream start/stop and transcode start as log events.
+### Phase 1 — Bitrate & encoding visibility *(shipped in v1.0.1.4)*
+Active streams by play method, native + transcoded bitrate distributions, aggregate outbound rate gauge with stale-session filtering, transcode count by reason, ffmpeg encode-fps / source-fps / encode-speed-ratio histograms. Structured `transcode_started` / `transcode_stopped` log lines with hardware accel, source/target codec+container, reasons, elapsed seconds, and stop_reason. `GET /Jellytel/Debug/Sessions` diagnostic endpoint for "what does the plugin currently see?"
 
-### Phase 2 — Playback experience *(planned)*
+### Phase 2 — Playback experience *(next)*
 Buffer-ahead distance, rebuffer/stall events, session vs. content duration, pause/resume.
+
+**First step:** playback-completion histogram (`position_ticks / runtime_ticks` recorded on `PlaybackStopped`, tagged by `media_type` and `play_method`). Answers "are people finishing what they start, or bouncing in the first five minutes?" — strictly cheaper than the buffer-ahead derivation and uses signals we already capture.
 
 ### Phase 3 — Attribution *(planned)*
 Per-user bandwidth, per-client-type breakdown, transcode-reason breakdown, playback request traces.
+
+**First step:** add `video_codec`, `audio_codec`, `container`, `resolution_bucket` (SD/HD/FHD/UHD), and `audio_channels` (stereo/5.1/7.1) tag dimensions to the existing `playback.started` counter and `bitrate.native` histogram. Available from the existing event args — no new event subscriptions or state. Directly answers "which codecs/containers/resolutions are actually getting played?" and pairs with the transcode-reasons counter to explain *why* mismatched sources fall into transcode.
 
 ### Phase 4 — Library & storage *(planned)*
 Item counts by type, storage per library, scheduled-task outcomes, scan/add/remove events.
